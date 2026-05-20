@@ -119,15 +119,11 @@ func BalanceChat(ctx context.Context, start time.Time, style string, before Befo
 			withHeader := lo.FromPtrOr(modelWithProvider.WithHeader, false)
 			headers := BuildHeaders(reqMeta.Header, withHeader, modelWithProvider.CustomerHeaders, before.Stream)
 
-			// 注入 ExtraBody 参数到请求体
-			rawBody := before.raw
-			if len(modelWithProvider.ExtraBody) > 0 {
-				for key, value := range modelWithProvider.ExtraBody {
-					rawBody, err = sjson.SetBytes(rawBody, key, value)
-					if err != nil {
-						slog.Warn("failed to set extra body key", "key", key, "error", err)
-					}
-				}
+			rawBody, err := buildUpstreamBody(before.raw, modelWithProvider.ExtraBody)
+			if err != nil {
+				retryLog <- log.WithError(err)
+				balancer.Delete(id)
+				continue
 			}
 
 			req, err := chatModel.BuildReq(ctx, headers, modelWithProvider.ProviderModel, rawBody)
@@ -194,6 +190,25 @@ func BalanceChat(ctx context.Context, start time.Time, style string, before Befo
 	}
 
 	return nil, nil, fmt.Errorf("All retry failed, trace ID: %s", traceID)
+}
+
+func buildUpstreamBody(raw []byte, extraBody map[string]any) ([]byte, error) {
+	rawBody := raw
+	if len(extraBody) > 0 {
+		for key, value := range extraBody {
+			var err error
+			rawBody, err = sjson.SetBytes(rawBody, key, value)
+			if err != nil {
+				slog.Warn("failed to set extra body key", "key", key, "error", err)
+			}
+		}
+	}
+
+	rawBody, err := sjson.DeleteBytes(rawBody, "session_id")
+	if err != nil {
+		return nil, fmt.Errorf("delete session_id from upstream body: %w", err)
+	}
+	return rawBody, nil
 }
 
 func RecordRetryLog(ctx context.Context, retryLog chan models.ChatLog) {
