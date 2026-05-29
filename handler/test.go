@@ -50,6 +50,7 @@ const (
 
 	testAnthropic = `{
     	"model": "claude-sonnet-4-5",
+		"max_tokens": 1,
     	"messages": [
       		{
         		"role": "user", 
