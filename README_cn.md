@@ -66,6 +66,34 @@ GIN_MODE=release TOKEN=<YOUR_TOKEN> ./llmio
 ```
 运行后会自动在当前目录下创建 `./db/llmio.db` 作为 `sqlite` 持久化数据文件。
 
+### 源码编译部署
+
+从源码构建单二进制（前端嵌入后端），适合自定义修改后部署。需要 `go >= 1.26.1` 与 `node >= 20` + `pnpm`。
+
+**一键编译**（推荐）：
+```bash
+scripts/build.sh
+```
+该脚本会自动安装前端依赖、构建 `webui/dist`，再编译出已嵌入前端的静态二进制 `./llmio`。可选参数：
+- `scripts/build.sh --skip-webui`：前端 `dist` 已存在时跳过前端，只重编后端
+- `scripts/build.sh --cgo`：启用 CGO 编译（非静态二进制，依赖 libc）
+
+**启停管理**（日志自动写入 `logs/llmio.log`，PID 记录在 `run/llmio.pid`）：
+```bash
+scripts/ctl.sh start     # 启动（后台，脱离会话存活）
+scripts/ctl.sh stop      # 停止
+scripts/ctl.sh restart   # 重启
+scripts/ctl.sh status    # 查看运行状态与端口监听
+scripts/ctl.sh logs      # tail -f 跟踪日志
+```
+`ctl.sh` 默认使用 `TOKEN`、`LLMIO_SERVER_PORT=8070`、`GIN_MODE=release`、`TZ=Asia/Shanghai`，可在 shell 中覆盖：
+```bash
+LLMIO_SERVER_PORT=9090 TOKEN=<YOUR_TOKEN> scripts/ctl.sh start
+```
+每次启动会对 `logs/llmio.log` 自动轮转，保留最近 5 份历史（`llmio.log.1` ~ `llmio.log.5`）。
+
+> 也可使用 Makefile：`make webui` 构建前端，`TOKEN=<YOUR_TOKEN> make run` 直接运行（开发用，不嵌入前端）。
+
 ## 环境变量
 
 | 变量 | 说明 | 默认值 | 备注 |
@@ -116,33 +144,36 @@ LLMIO 提供多供应商兼容的 REST API，支持以下端点：
 
 ### 认证方式
 
-LLMIO 根据端点类型使用不同的认证方式：
+LLMIO 根据端点类型使用不同的认证方式，**任一协议的端点都同时支持以下任一 header**（按优先级匹配）：协议标准 header、`Authorization: Bearer`、`x-api-key`、`x-goog-api-key`。因此无论用 OpenAI、Anthropic 还是 Gemini 风格的客户端库，都能直接接入。
 
 #### 1. OpenAI 格式端点（Bearer Token）
 适用于：`/openai/v1/*` 和 `/v1/*` 中的 OpenAI 兼容端点
 ```bash
-curl -H "Authorization: Bearer YOUR_TOKEN" http://localhost:7070/openai/v1/models
+curl -H "Authorization: Bearer YOUR_TOKEN" http://localhost:8070/openai/v1/models
 ```
 
 #### 2. Anthropic 格式端点（x-api-key）
 适用于：`/anthropic/v1/*` 和 `/v1/*` 中的 Anthropic 兼容端点
 ```bash
-curl -H "x-api-key: YOUR_TOKEN" http://localhost:7070/anthropic/v1/messages
+curl -H "x-api-key: YOUR_TOKEN" http://localhost:8070/anthropic/v1/messages
 ```
 
 #### 3. Gemini Native 端点（x-goog-api-key）
 适用于：`/gemini/v1beta/*` 中的 Gemini 原生端点
 ```bash
-curl -H "x-goog-api-key: YOUR_TOKEN" http://localhost:7070/gemini/v1beta/models
+curl -H "x-goog-api-key: YOUR_TOKEN" http://localhost:8070/gemini/v1beta/models
 ```
+
+> **跨协议兼容**：Anthropic 端点也接受 `Authorization: Bearer`（对应 Claude Code 的 `ANTHROPIC_AUTH_TOKEN`），OpenAI 端点也接受 `x-api-key`（对应 `ANTHROPIC_API_KEY`）。这样 Claude Code、Codex、Gemini CLI 等不同客户端无需改 header 即可共用同一个 TOKEN/AuthKey。
 
 对于cc或者codex, 使用如下环境变量接入鉴权
 ```bash
 export OPENAI_API_KEY=<YOUR_TOKEN>
-export ANTHROPIC_API_KEY=<YOUR_TOKEN>
+export ANTHROPIC_API_KEY=<YOUR_TOKEN>     # Claude Code 会以 x-api-key 发送
 export GEMINI_API_KEY=<YOUR_TOKEN>
 ```
 > **注意**：`/v1/*` 路径为兼容性保留，建议使用新的供应商特定路径。
+
 
 ## 目录结构
 
@@ -157,6 +188,8 @@ export GEMINI_API_KEY=<YOUR_TOKEN>
 ├─ models/              # GORM 实体定义与数据库初始化
 ├─ common/              # 通用工具与响应辅助方法
 ├─ webui/               # React + TypeScript 管理前端
+├─ scripts/             # build.sh 编译脚本、ctl.sh 启停脚本
+├─ logs/                # 运行日志（ctl.sh 启动时写入，自动轮转）
 └─ docs/                # 运维与使用说明
 ```
 

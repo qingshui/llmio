@@ -17,6 +17,7 @@ import (
 
 type AuthKeyRequest struct {
 	Name      string   `json:"name" binding:"required"`
+	Key       string   `json:"key"`
 	Status    *bool    `json:"status"`
 	IOLog     *bool    `json:"io_log"`
 	AllowAll  *bool    `json:"allow_all"`
@@ -187,6 +188,24 @@ func UpdateAuthKey(c *gin.Context) {
 		AllowAll:  req.AllowAll,
 		Models:    sanitizeModels(req.Models),
 		ExpiresAt: expiresAt,
+	}
+
+	// 若提交了新的 key 则更新 key 值（支持手动修改密钥）。
+	// 用户输入什么就存什么，不自动补前缀——允许自定义任意格式的 key（如 sk-、sk-llmio- 等）。
+	if trimmedKey := strings.TrimSpace(req.Key); trimmedKey != "" {
+		// 校验 key 不与其它密钥重复
+		count, err := gorm.G[models.AuthKey](models.DB).
+			Where("key = ? AND id <> ?", trimmedKey, id).
+			Count(ctx, "id")
+		if err != nil {
+			common.InternalServerError(c, "Database error: "+err.Error())
+			return
+		}
+		if count > 0 {
+			common.BadRequest(c, "Key already exists")
+			return
+		}
+		update.Key = trimmedKey
 	}
 
 	if update.ExpiresAt == nil {

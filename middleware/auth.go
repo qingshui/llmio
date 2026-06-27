@@ -43,32 +43,44 @@ func Auth(token string) gin.HandlerFunc {
 	}
 }
 
+// extractAuthKey 按优先级从多个 header 中提取鉴权 key。
+// 依次尝试：协议标准 header → Authorization: Bearer → x-api-key → x-goog-api-key。
+// 这样任一协议都同时支持 Bearer（ANTHROPIC_AUTH_TOKEN）与 x-api-key（ANTHROPIC_API_KEY）等携带方式。
+func extractAuthKey(c *gin.Context, primaryHeader string) string {
+	if key := c.GetHeader(primaryHeader); key != "" {
+		return key
+	}
+	parts := strings.SplitN(c.GetHeader("Authorization"), " ", 2)
+	if len(parts) == 2 && parts[0] == "Bearer" && parts[1] != "" {
+		return parts[1]
+	}
+	if key := c.GetHeader("x-api-key"); key != "" {
+		return key
+	}
+	if key := c.GetHeader("x-goog-api-key"); key != "" {
+		return key
+	}
+	return ""
+}
+
 // 用于OpenAI接口鉴权
 func AuthOpenAI(adminToken string) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		parts := strings.SplitN(c.GetHeader("Authorization"), " ", 2)
-
-		var authKey string
-		if len(parts) == 2 && parts[0] == "Bearer" {
-			authKey = parts[1]
-		}
-		checkAuthKey(c, authKey, adminToken)
+		checkAuthKey(c, extractAuthKey(c, ""), adminToken)
 	}
 }
 
 // 用于Anthropic接口鉴权
 func AuthAnthropic(adminToken string) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		authKey := c.GetHeader("x-api-key")
-		checkAuthKey(c, authKey, adminToken)
+		checkAuthKey(c, extractAuthKey(c, "x-api-key"), adminToken)
 	}
 }
 
 // 用于Gemini原生接口鉴权
 func AuthGemini(adminToken string) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		key := c.GetHeader("x-goog-api-key")
-		checkAuthKey(c, key, adminToken)
+		checkAuthKey(c, extractAuthKey(c, "x-goog-api-key"), adminToken)
 	}
 }
 

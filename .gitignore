@@ -6,3 +6,6 @@ api.md
 todo.md
 db
 .gocache/
+# 运行时：PID 文件与日志
+run/
+logs/

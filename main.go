@@ -31,6 +31,10 @@ func main() {
 	service.StartLogCleanupScheduler(context.Background())
 
 	router := gin.Default()
+	// 信任前置代理（nginx 等），使 c.ClientIP() 返回真实客户端 IP 而非代理本机 IP。
+	// TRUSTED_PROXIES 未设置时默认信任全部（开发友好），生产建议显式设为 nginx 所在网段，如 "127.0.0.1/32"。
+	trusted := env.GetWithDefault("TRUSTED_PROXIES", "0.0.0.0/0,::/0")
+	_ = router.SetTrustedProxies(strings.Split(trusted, ","))
 	// gzip压缩
 	router.Use(gzip.Gzip(gzip.DefaultCompression, gzip.WithExcludedPaths([]string{"/openai", "/anthropic", "/gemini", "/v1"})))
 	// 跨域

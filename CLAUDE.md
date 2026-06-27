@@ -32,6 +32,26 @@ go fmt ./...
 go mod tidy
 ```
 
+### Production Build & Service Control
+
+项目提供 `scripts/build.sh` 和 `scripts/ctl.sh` 用于源码编译和服务启停管理（日志记录到 `logs/llmio.log`）。
+
+```bash
+# 一键编译：前端 + 静态后端，产出已嵌入前端的 ./llmio
+scripts/build.sh
+# 可选：--skip-webui（dist 已存在时跳过前端）、--cgo（CGO 启用编译）
+
+# 服务启停（后台运行，setsid 脱离会话，PID 存 run/llmio.pid）
+scripts/ctl.sh start     # 启动，日志写入 logs/llmio.log（自动轮转保留 5 份）
+scripts/ctl.sh stop      # 停止
+scripts/ctl.sh restart   # 重启
+scripts/ctl.sh status    # 查看状态与端口监听
+scripts/ctl.sh logs      # tail -f 跟踪日志
+
+# ctl.sh 默认 TOKEN/LLMIO_SERVER_PORT=8070/GIN_MODE=release/TZ=Asia/Shanghai，可在 shell 覆盖
+LLMIO_SERVER_PORT=9090 TOKEN=xxx scripts/ctl.sh start
+```
+
 ### Frontend Development
 ```bash
 cd webui
@@ -51,6 +71,8 @@ make webui
 # Run linting
 pnpm run lint
 ```
+
+> 注意：本环境下 vite build 的 esbuild native service 会偶发 EPIPE。`node_modules` 中已对 esbuild（禁用 worker_threads，强制 `transformSync` 走 `runServiceSync`）和 vite（4 处 `await transform` 改为 `transformSync`）打了 patch。`pnpm install` 重装后 patch 会丢失，需重新打。`scripts/build.sh` 不依赖这些 patch（直接调 `pnpm run build`），若遇 EPIPE 需手动重打 patch 或多次重试。
 
 ### Docker Development
 ```bash

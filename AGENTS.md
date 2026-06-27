@@ -12,6 +12,7 @@
 - `go test ./...` 跑通所有 Go 单元测试，目前集中在 `handler/test_test.go` ，每次提交前需保持通过。
 - 使用 `go test ./...` 若遇到权限不足，请在当前目录下设置 `GOCACHE=$PWD/.gocache` 后重试，测试结束立刻删除 `.gocache` 目录。
 - `cd webui && pnpm install && pnpm run dev` 开启 Vite HMR ，`pnpm run build` 生成生产静态资源。
+- 生产编译与启停用 `scripts/`：`scripts/build.sh` 一键编译前端+静态后端产出 `./llmio`（支持 `--skip-webui` `--cgo`）；`scripts/ctl.sh start|stop|restart|status|logs` 管理服务，日志写入 `logs/llmio.log`（自动轮转保留 5 份），PID 存 `run/llmio.pid`。默认 `LLMIO_SERVER_PORT=8070 GIN_MODE=release TZ=Asia/Shanghai`，可在 shell 覆盖。
 
 ## 代码风格与命名约定
 - Go 代码统一使用 `go fmt` 和 tab 缩进；导出符号使用 UpperCamelCase ，局部变量使用 lowerCamelCase ，JSON 标签使用 snake_case。

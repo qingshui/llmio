@@ -31,6 +31,7 @@ import {
   getProviderModels
 } from "@/lib/api";
 import type { Provider, ProviderTemplate, ProviderModel } from "@/lib/api";
+import { copyText } from "@/lib/clipboard";
 import { toast } from "sonner";
 import { ExternalLink, Pencil, Trash2, Boxes } from "lucide-react";
 import { ProviderFormDialog } from "@/routes/providers/provider-form-dialog";
@@ -130,7 +131,7 @@ export default function ProvidersPage() {
   };
 
   const copyModelName = async (modelName: string) => {
-    await navigator.clipboard.writeText(modelName);
+    await copyText(modelName);
     toast.success(t('toast.copy_model', { name: modelName }));
   };
 

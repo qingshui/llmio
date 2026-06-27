@@ -57,6 +57,7 @@ import {
 import Loading from "@/components/loading";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { copyText } from "@/lib/clipboard";
 import { Calendar } from "@/components/ui/calendar";
 import {
   getAuthKeys,
@@ -221,7 +222,8 @@ export default function AuthKeysPage() {
     setEditingKey(key);
     form.reset({
       name: key.Name,
-      key: key.Key,
+      // key 留空表示不修改，避免原样回填后被当作"修改"重复写入
+      key: "",
       status: key.Status,
       io_log: key.IOLog,
       allow_all: key.AllowAll,
@@ -233,7 +235,7 @@ export default function AuthKeysPage() {
 
   const handleCopyKey = async (keyValue: string) => {
     try {
-      await navigator.clipboard.writeText(keyValue);
+      await copyText(keyValue);
       toast.success(t('toast.copy_success'));
     } catch (error) {
       console.error(error);
@@ -708,6 +710,28 @@ export default function AuthKeysPage() {
                   </FormItem>
                 )}
               />
+
+              {editingKey && (
+                <FormField
+                  control={form.control}
+                  name="key"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{t('form.key_label', { defaultValue: 'Key' })}</FormLabel>
+                      <FormControl>
+                        <Input
+                          {...field}
+                          value={field.value ?? ""}
+                          placeholder={t('form.key_placeholder', { defaultValue: '留空则不修改' })}
+                          autoComplete="off"
+                          spellCheck={false}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              )}
 
               <FormField
                 control={form.control}

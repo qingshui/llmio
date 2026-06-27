@@ -66,6 +66,34 @@ GIN_MODE=release TOKEN=<YOUR_TOKEN> ./llmio
 ```
 The service will create `./db/llmio.db` in the current directory as the SQLite persistence file.
 
+### Build from Source
+
+Build a single binary (frontend embedded into backend) from source. Requires `go >= 1.26.1` and `node >= 20` + `pnpm`.
+
+**One-step build** (recommended):
+```bash
+scripts/build.sh
+```
+Installs frontend deps, builds `webui/dist`, then compiles a static binary `./llmio` with the frontend embedded. Options:
+- `scripts/build.sh --skip-webui`: skip frontend (when `dist` already exists), only recompile backend
+- `scripts/build.sh --cgo`: build with CGO enabled (non-static, depends on libc)
+
+**Service control** (logs to `logs/llmio.log`, PID in `run/llmio.pid`):
+```bash
+scripts/ctl.sh start     # start (background, survives session via setsid)
+scripts/ctl.sh stop      # stop
+scripts/ctl.sh restart   # restart
+scripts/ctl.sh status    # show status & port
+scripts/ctl.sh logs      # tail -f logs
+```
+`ctl.sh` defaults to `TOKEN`, `LLMIO_SERVER_PORT=8070`, `GIN_MODE=release`, `TZ=Asia/Shanghai`; override in shell:
+```bash
+LLMIO_SERVER_PORT=9090 TOKEN=<YOUR_TOKEN> scripts/ctl.sh start
+```
+Each start auto-rotates `logs/llmio.log`, keeping the last 5 archives (`llmio.log.1` ~ `llmio.log.5`).
+
+> Alternatively, Makefile: `make webui` builds the frontend, `TOKEN=<YOUR_TOKEN> make run` runs directly (dev, no embedding).
+
 ## Environment Variables
 
 | Variable | Description | Default | Notes |
@@ -116,30 +144,32 @@ LLMIO provides a multi‑provider REST API with the following endpoints:
 
 ### Authentication
 
-LLMIO uses different auth headers depending on the endpoint:
+LLMIO selects the auth header by endpoint, **but any endpoint accepts any of these headers** (matched in priority order): the protocol's native header, `Authorization: Bearer`, `x-api-key`, `x-goog-api-key`. So OpenAI, Anthropic, and Gemini client libraries can all hit the same LLMIO instance without header changes.
 
 #### 1. OpenAI‑style endpoints (Bearer Token)
 Applies to `/openai/v1/*` and OpenAI‑compatible endpoints under `/v1/*`.
 ```bash
-curl -H "Authorization: Bearer YOUR_TOKEN" http://localhost:7070/openai/v1/models
+curl -H "Authorization: Bearer YOUR_TOKEN" http://localhost:8070/openai/v1/models
 ```
 
 #### 2. Anthropic‑style endpoints (x-api-key)
 Applies to `/anthropic/v1/*` and Anthropic‑compatible endpoints under `/v1/*`.
 ```bash
-curl -H "x-api-key: YOUR_TOKEN" http://localhost:7070/anthropic/v1/messages
+curl -H "x-api-key: YOUR_TOKEN" http://localhost:8070/anthropic/v1/messages
 ```
 
 #### 3. Gemini Native endpoints (x-goog-api-key)
 Applies to `/gemini/v1beta/*` endpoints.
 ```bash
-curl -H "x-goog-api-key: YOUR_TOKEN" http://localhost:7070/gemini/v1beta/models
+curl -H "x-goog-api-key: YOUR_TOKEN" http://localhost:8070/gemini/v1beta/models
 ```
+
+> **Cross-protocol compat**: Anthropic endpoints also accept `Authorization: Bearer` (Claude Code's `ANTHROPIC_AUTH_TOKEN`), and OpenAI endpoints also accept `x-api-key` (Claude Code's `ANTHROPIC_API_KEY`). Different clients — Claude Code, Codex, Gemini CLI — can share one TOKEN/AuthKey without altering headers.
 
 For claude code or codex, use these environment variables:
 ```bash
 export OPENAI_API_KEY=<YOUR_TOKEN>
-export ANTHROPIC_API_KEY=<YOUR_TOKEN>
+export ANTHROPIC_API_KEY=<YOUR_TOKEN>     # Claude Code sends as x-api-key
 export GEMINI_API_KEY=<YOUR_TOKEN>
 ```
 > **Note**: `/v1/*` paths are kept for compatibility. Prefer the provider‑specific routes.
@@ -157,6 +187,8 @@ export GEMINI_API_KEY=<YOUR_TOKEN>
 ├─ models/              # GORM models and DB init
 ├─ common/              # Shared helpers
 ├─ webui/               # React + TypeScript admin UI
+├─ scripts/             # build.sh (build), ctl.sh (start/stop)
+├─ logs/                # runtime logs (written by ctl.sh, auto-rotated)
 └─ docs/                # Ops & usage docs
 ```
 

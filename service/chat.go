@@ -330,6 +330,21 @@ func ProvidersWithMetaBymodelsName(ctx context.Context, style string, before Bef
 		return nil, err
 	}
 
+	// 能力过滤后若无可用 provider，回退到该模型的全部启用关联，
+	// 避免因未在配置中声明 tool_call/structured_output/image 能力而导致 500。
+	if len(modelWithProviders) == 0 {
+		slog.Warn("no provider matches capability filters, falling back to all enabled associations",
+			"model", before.Model, "tool_call", before.toolCall,
+			"structured_output", before.structuredOutput, "image", before.image)
+		modelWithProviders, err = gorm.G[models.ModelWithProvider](models.DB).
+			Where("model_id = ?", model.ID).
+			Where("status = ?", true).
+			Find(ctx)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	if len(modelWithProviders) == 0 {
 		return nil, errors.New("not provider for model " + before.Model)
 	}

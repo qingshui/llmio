@@ -12,8 +12,11 @@ export default defineConfig({
     },
 
   },
+  // 禁用 esbuild（其 service 在部分环境下会 EPIPE），JSX 已由 @vitejs/plugin-react-swc 处理，
+  // 最终压缩改用 terser。
   build: {
     chunkSizeWarningLimit: 1000,
+    minify: "terser",
     rollupOptions: {
       output: {
         manualChunks: {

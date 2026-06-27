@@ -2,11 +2,20 @@ package service
 
 import (
 	"errors"
+	"regexp"
 	"strings"
 
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 )
+
+// ctxMarkerRe 匹配模型名末尾的 context window 标记，如 Claude Code 的 [1m]、[200k]。
+var ctxMarkerRe = regexp.MustCompile(`(\[\d+[km]\])+$`)
+
+// stripModelMarker 剥掉模型名末尾的 [1m]/[200k] 等标记，使 glm-5[1m] 自动映射到 glm-5。
+func stripModelMarker(model string) string {
+	return ctxMarkerRe.ReplaceAllString(model, "")
+}
 
 type Before struct {
 	Model            string
@@ -128,7 +137,7 @@ func NewBeforerGemini(model string, stream bool) Beforer {
 }
 
 func BeforerOpenAI(data []byte) (*Before, error) {
-	model := gjson.GetBytes(data, "model").String()
+	model := stripModelMarker(gjson.GetBytes(data, "model").String())
 	if model == "" {
 		return nil, errors.New("model is empty")
 	}
@@ -180,7 +189,7 @@ func BeforerOpenAI(data []byte) (*Before, error) {
 }
 
 func BeforerOpenAIRes(data []byte) (*Before, error) {
-	model := gjson.GetBytes(data, "model").String()
+	model := stripModelMarker(gjson.GetBytes(data, "model").String())
 	if model == "" {
 		return nil, errors.New("model is empty")
 	}
@@ -222,7 +231,7 @@ func BeforerOpenAIRes(data []byte) (*Before, error) {
 }
 
 func BeforerAnthropic(data []byte) (*Before, error) {
-	model := gjson.GetBytes(data, "model").String()
+	model := stripModelMarker(gjson.GetBytes(data, "model").String())
 	if model == "" {
 		return nil, errors.New("model is empty")
 	}
