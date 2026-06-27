@@ -25,8 +25,17 @@ PID_FILE="$ROOT/run/llmio.pid"
 LOG_DIR="$ROOT/logs"
 LOG_FILE="$LOG_DIR/llmio.log"
 
-# ---------- 默认配置（可被 .env 覆盖）----------
-TOKEN="${TOKEN:-spk-cc4090c3b8e170822d0f403e9873950399c718}"
+# ---------- 配置加载 ----------
+# 优先级：shell 环境变量 > .env 文件 > 脚本默认值
+# TOKEN 为敏感信息，禁止硬编码到仓库，必须从环境或 .env 读取。
+ENV_FILE="${ENV_FILE:-$ROOT/.env}"
+if [ -f "$ENV_FILE" ]; then
+  set -a
+  # shellcheck disable=SC1090
+  . "$ENV_FILE"
+  set +a
+fi
+: "${TOKEN:?TOKEN 未配置：请在 .env 文件或环境变量中设置（.env 已被 .gitignore 忽略）}"
 LLMIO_SERVER_PORT="${LLMIO_SERVER_PORT:-8070}"
 GIN_MODE="${GIN_MODE:-release}"
 TZ="${TZ:-Asia/Shanghai}"
