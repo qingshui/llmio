@@ -179,6 +179,10 @@ func ProcesserAnthropic(ctx context.Context, pr io.Reader, stream bool, start ti
 	var once sync.Once
 
 	var usageStr string
+	// 流式下 Anthropic 的 input_tokens 只在 message_start 出现，
+	// output_tokens 只在 message_delta 出现，需分别记录后合并。
+	var startUsageStr string
+	var deltaUsageStr string
 
 	var output models.OutputUnion
 	var size int
@@ -208,12 +212,35 @@ func ProcesserAnthropic(ctx context.Context, pr io.Reader, stream bool, start ti
 		}
 
 		output.OfStringArray = append(output.OfStringArray, after)
-		if event == "message_delta" {
-			usageStr = gjson.Get(after, "usage").String()
+		switch event {
+		case "message_start":
+			// message_start 的 usage 在 message.usage 里，含 input_tokens
+			startUsageStr = gjson.Get(after, "message.usage").String()
+		case "message_delta":
+			deltaUsageStr = gjson.Get(after, "usage").String()
 		}
 	}
 	if err := scanner.Err(); err != nil {
 		return nil, nil, err
+	}
+
+	// 合并 message_start 与 message_delta 的 usage：input 来自前者，output 来自后者
+	if stream {
+		var startU, deltaU AnthropicUsage
+		if json.Valid([]byte(startUsageStr)) {
+			_ = json.Unmarshal([]byte(startUsageStr), &startU)
+		}
+		if json.Valid([]byte(deltaUsageStr)) {
+			_ = json.Unmarshal([]byte(deltaUsageStr), &deltaU)
+		}
+		merged, _ := json.Marshal(AnthropicUsage{
+			InputTokens:              startU.InputTokens,
+			CacheCreationInputTokens: startU.CacheCreationInputTokens,
+			CacheReadInputTokens:     startU.CacheReadInputTokens,
+			OutputTokens:             deltaU.OutputTokens,
+			ServiceTier:              deltaU.ServiceTier,
+		})
+		usageStr = string(merged)
 	}
 
 	var anthropicUsage AnthropicUsage
