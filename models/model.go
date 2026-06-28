@@ -33,6 +33,8 @@ type Model struct {
 	Strategy     string // 负载均衡策略 默认 lottery
 	Breaker      *bool  // 是否开启熔断
 	DisplayOrder int    // 模型展示顺序，值越大越靠前
+	Sticky       *bool  // 是否开启 IP 亲和性调度
+	StickyTTL    int    // 粘性缓存秒数，0 表示用默认常量
 }
 
 type ModelWithProvider struct {
@@ -48,6 +50,7 @@ type ModelWithProvider struct {
 	CustomerHeaders  map[string]string `gorm:"serializer:json"` // 自定义headers
 	ExtraBody        map[string]any    `gorm:"serializer:json"` // 额外请求体参数
 	Weight           int
+	Priority         int // 优先级，数字越大越优先；仅 priority 策略下分层降级
 	InputPrice       *float64
 	CacheReadPrice   *float64
 	OutputPrice      *float64
