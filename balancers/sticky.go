@@ -89,7 +89,13 @@ func (s *StickyBalancer) Delete(key uint) {
 
 func (s *StickyBalancer) Reduce(key uint) {
 	s.Balancer.Reduce(key)
-	// 429 仅降权，不失效缓存：下次仍可能命中（由内层决定是否选中）
+	// 429 降权并失效缓存：本请求后续重试重新选择，避免反复命中同一限流 provider；
+	// 最终成功后由 Success 重新绑定。
+	if v, ok := stickyCache.Load(s.cacheKey()); ok {
+		if v.(stickyEntry).key == key {
+			stickyCache.Delete(s.cacheKey())
+		}
+	}
 }
 
 func (s *StickyBalancer) Success(key uint) {

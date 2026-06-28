@@ -96,3 +96,23 @@ func TestStickyDefaultTTLWhenZero(t *testing.T) {
 		t.Errorf("unexpected error with zero ttl: %v", err)
 	}
 }
+
+func TestStickyReduceInvalidates(t *testing.T) {
+	ResetStickyCache()
+	inner := NewLottery(map[uint]int{1: 1, 2: 1})
+	s := NewSticky(inner, "m", "1.2.3.4", time.Minute)
+	first, _ := s.Pop()
+	// cache now pinned to `first`
+	_, ok := stickyCache.Load(s.cacheKey())
+	if !ok {
+		t.Fatalf("expected cache populated after Pop")
+	}
+	s.Reduce(first)
+	if _, ok := stickyCache.Load(s.cacheKey()); ok {
+		t.Errorf("expected cache invalidated after Reduce(first), still present")
+	}
+	// And Pop should now re-select via inner (returns a valid key, no error)
+	if _, err := s.Pop(); err != nil {
+		t.Errorf("unexpected error on re-Pop after Reduce: %v", err)
+	}
+}

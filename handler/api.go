@@ -390,6 +390,12 @@ func UpdateModel(c *gin.Context) {
 		return
 	}
 
+	// Force-write sticky_ttl so that 0 (use default) persists — GORM struct Updates skips zero-values.
+	if err := models.DB.Model(&models.Model{}).Where("id = ?", id).Update("sticky_ttl", req.StickyTTL).Error; err != nil {
+		common.InternalServerError(c, "Failed to update sticky_ttl: "+err.Error())
+		return
+	}
+
 	// Get updated model
 	updatedModel, err := gorm.G[models.Model](models.DB).Where("id = ?", id).First(c.Request.Context())
 	if err != nil {
@@ -695,6 +701,12 @@ func UpdateModelProvider(c *gin.Context) {
 
 	if _, err := gorm.G[models.ModelWithProvider](models.DB).Where("id = ?", id).Updates(c.Request.Context(), updates); err != nil {
 		common.InternalServerError(c, "Failed to update model-provider association: "+err.Error())
+		return
+	}
+
+	// Force-write priority so that 0 (default/demote) persists — GORM struct Updates skips zero-values.
+	if err := models.DB.Model(&models.ModelWithProvider{}).Where("id = ?", id).Update("priority", req.Priority).Error; err != nil {
+		common.InternalServerError(c, "Failed to update priority: "+err.Error())
 		return
 	}
 

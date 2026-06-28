@@ -74,7 +74,7 @@ type MobileInfoItemProps = {
   value: ReactNode;
 };
 
-type StrategyFilter = "all" | "lottery" | "rotor";
+type StrategyFilter = "all" | "lottery" | "rotor" | "priority";
 
 const MobileInfoItem = ({ label, value }: MobileInfoItemProps) => (
   <div className="space-y-1">
@@ -84,14 +84,14 @@ const MobileInfoItem = ({ label, value }: MobileInfoItemProps) => (
 );
 
 const renderStrategy = (strategy?: string) =>
-  strategy === "rotor" ? "Rotor" : "Lottery";
+  strategy === "rotor" ? "Rotor" : (strategy === "priority" ? "Priority" : "Lottery");
 
 const modelEditSchema = z.object({
   name: z.string().min(1, { message: "模型名称不能为空" }),
   remark: z.string(),
   max_retry: z.number().min(0, { message: "重试次数限制不能为负数" }),
   time_out: z.number().min(0, { message: "超时时间不能为负数" }),
-  strategy: z.enum(["lottery", "rotor"]),
+  strategy: z.enum(["lottery", "rotor", "priority"]),
   breaker: z.boolean(),
   sticky: z.boolean(),
   sticky_ttl: z.number().int().min(0),
@@ -545,7 +545,7 @@ export default function ModelProvidersPage() {
       remark: model.Remark ?? "",
       max_retry: model.MaxRetry,
       time_out: model.TimeOut,
-      strategy: model.Strategy === "rotor" ? "rotor" : "lottery",
+      strategy: model.Strategy === "rotor" ? "rotor" : (model.Strategy === "priority" ? "priority" : "lottery"),
       breaker: model.Breaker ?? false,
       sticky: model.Sticky ?? false,
       sticky_ttl: model.StickyTTL ?? 0,
@@ -785,6 +785,7 @@ export default function ModelProvidersPage() {
                     <SelectItem value="all">{t('common:status.all')}</SelectItem>
                     <SelectItem value="lottery">Lottery</SelectItem>
                     <SelectItem value="rotor">Rotor</SelectItem>
+                    <SelectItem value="priority">Priority</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -1465,6 +1466,11 @@ export default function ModelProvidersPage() {
                           value: "rotor",
                           title: t('model_form.strategy_rotor_title'),
                           desc: t('model_form.strategy_rotor_desc'),
+                        },
+                        {
+                          value: "priority",
+                          title: "Priority",
+                          desc: "按优先级分层, 高优先级全部失败后降到下一层.",
                         },
                       ].map((option) => (
                         <label
