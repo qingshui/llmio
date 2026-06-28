@@ -255,6 +255,25 @@ export function ModelProviderFormDialog({
                   </FormItem>
                 )}
               />
+              <FormField
+                control={form.control}
+                name="priority"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{t('association_form.priority')}</FormLabel>
+                    <FormControl>
+                      <Input
+                        {...field}
+                        type="number"
+                        min="0"
+                        onChange={(e) => field.onChange(parseInt(e.target.value) || 0)}
+                      />
+                    </FormControl>
+                    <p className="text-[11px] text-muted-foreground">{t('association_form.priority_hint')}</p>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
               <FormLabel>{t('association_form.capabilities')}</FormLabel>
               <FormField
                 control={form.control}

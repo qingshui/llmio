@@ -1073,6 +1073,7 @@ export default function ModelProvidersPage() {
                       <TableHead>{t('association_table.vision')}</TableHead>
                       <TableHead>{t('association_table.with_header')}</TableHead>
                       <TableHead>{t('association_table.weight')}</TableHead>
+                      <TableHead>{t('association_table.priority')}</TableHead>
                       <TableHead>{t('association_table.enabled')}</TableHead>
                       <TableHead>
                         <div className="flex items-center gap-1">{t('association_table.status')}
@@ -1125,6 +1126,7 @@ export default function ModelProvidersPage() {
                             </span>
                           </TableCell>
                           <TableCell>{association.Weight}</TableCell>
+                          <TableCell>{association.Priority}</TableCell>
                           <TableCell>
                             <div className="flex items-center gap-2">
                               <Switch
@@ -1217,6 +1219,7 @@ export default function ModelProvidersPage() {
                       <MobileInfoItem label={t('association_table.mobile.provider_type')} value={provider?.Type ?? t('common:unknown')} />
                       <MobileInfoItem label={t('association_table.mobile.provider_id')} value={<span className="font-mono text-xs">{provider?.ID ?? '-'}</span>} />
                       <MobileInfoItem label={t('association_table.mobile.weight')} value={association.Weight} />
+                      <MobileInfoItem label={t('association_table.mobile.priority')} value={association.Priority} />
                       <MobileInfoItem
                         label={t('association_table.mobile.with_header')}
                         value={<span className={association.WithHeader ? "text-green-600" : "text-red-600"}>{association.WithHeader ? '✓' : '✗'}</span>}
