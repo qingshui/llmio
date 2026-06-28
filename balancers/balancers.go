@@ -67,6 +67,11 @@ func (w *Lottery) Success(key uint) {
 	w.success = key
 }
 
+func (w *Lottery) Has(key uint) bool {
+	_, ok := w.store[key]
+	return ok
+}
+
 // 按顺序循环轮转，每次降低权重后移到队尾
 type Rotor struct {
 	*list.List
@@ -121,4 +126,13 @@ func (w *Rotor) Reduce(key uint) {
 
 func (w *Rotor) Success(key uint) {
 	w.success = key
+}
+
+func (w *Rotor) Has(key uint) bool {
+	for e := w.Front(); e != nil; e = e.Next() {
+		if e.Value.(uint) == key {
+			return true
+		}
+	}
+	return false
 }

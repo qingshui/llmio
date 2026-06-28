@@ -287,3 +287,31 @@ func BenchmarkRotor(b *testing.B) {
 		}
 	})
 }
+
+func TestLotteryHas(t *testing.T) {
+	w := NewLottery(map[uint]int{1: 1, 2: 2})
+	if !w.Has(1) {
+		t.Errorf("expected Has(1)=true")
+	}
+	if w.Has(999) {
+		t.Errorf("expected Has(999)=false")
+	}
+	w.Delete(1)
+	if w.Has(1) {
+		t.Errorf("expected Has(1)=false after Delete")
+	}
+}
+
+func TestRotorHas(t *testing.T) {
+	wl := NewRotor(map[uint]int{1: 10, 2: 20})
+	if !wl.Has(1) {
+		t.Errorf("expected Has(1)=true")
+	}
+	if wl.Has(999) {
+		t.Errorf("expected Has(999)=false")
+	}
+	wl.Delete(1)
+	if wl.Has(1) {
+		t.Errorf("expected Has(1)=false after Delete")
+	}
+}
