@@ -68,9 +68,9 @@ const MobileInfoItem = ({ label, value }: MobileInfoItemProps) => (
 );
 
 const renderStrategy = (strategy?: string) =>
-  strategy === "rotor" ? "Rotor" : "Lottery";
+  strategy === "rotor" ? "Rotor" : (strategy === "priority" ? "Priority" : "Lottery");
 
-type StrategyFilter = "all" | "lottery" | "rotor";
+type StrategyFilter = "all" | "lottery" | "rotor" | "priority";
 
 // 定义表单验证模式
 const formSchema = z.object({
@@ -78,8 +78,10 @@ const formSchema = z.object({
   remark: z.string(),
   max_retry: z.number().min(0, { message: "重试次数限制不能为负数" }),
   time_out: z.number().min(0, { message: "超时时间不能为负数" }),
-  strategy: z.enum(["lottery", "rotor"]),
+  strategy: z.enum(["lottery", "rotor", "priority"]),
   breaker: z.boolean(),
+  sticky: z.boolean(),
+  sticky_ttl: z.number().int().min(0),
 });
 
 export default function ModelsPage() {
@@ -107,6 +109,8 @@ export default function ModelsPage() {
       time_out: 60,
       strategy: "lottery",
       breaker: false,
+      sticky: false,
+      sticky_ttl: 0,
     },
   });
 
@@ -158,10 +162,12 @@ export default function ModelsPage() {
         time_out: values.time_out,
         strategy: values.strategy,
         breaker: values.breaker,
+        sticky: values.sticky,
+        sticky_ttl: values.sticky_ttl,
       });
       setOpen(false);
       toast.success(`模型: ${values.name} 创建成功`);
-      form.reset({ name: "", remark: "", max_retry: 10, time_out: 60, strategy: "lottery", breaker: false });
+      form.reset({ name: "", remark: "", max_retry: 10, time_out: 60, strategy: "lottery", breaker: false, sticky: false, sticky_ttl: 0 });
       await fetchModels();
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -179,11 +185,13 @@ export default function ModelsPage() {
         time_out: values.time_out,
         strategy: values.strategy,
         breaker: values.breaker,
+        sticky: values.sticky,
+        sticky_ttl: values.sticky_ttl,
       });
       setOpen(false);
       toast.success(`模型: ${values.name} 更新成功`);
       setEditingModel(null);
-      form.reset({ name: "", remark: "", max_retry: 10, time_out: 60, strategy: "lottery", breaker: false });
+      form.reset({ name: "", remark: "", max_retry: 10, time_out: 60, strategy: "lottery", breaker: false, sticky: false, sticky_ttl: 0 });
       await fetchModels();
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -214,15 +222,17 @@ export default function ModelsPage() {
       remark: model.Remark,
       max_retry: model.MaxRetry,
       time_out: model.TimeOut,
-      strategy: model.Strategy === "rotor" ? "rotor" : "lottery",
+      strategy: model.Strategy === "rotor" ? "rotor" : (model.Strategy === "priority" ? "priority" : "lottery"),
       breaker: model.Breaker ?? false,
+      sticky: model.Sticky ?? false,
+      sticky_ttl: model.StickyTTL ?? 0,
     });
     setOpen(true);
   };
 
   const openCreateDialog = () => {
     setEditingModel(null);
-    form.reset({ name: "", remark: "", max_retry: 10, time_out: 60, strategy: "lottery", breaker: false });
+    form.reset({ name: "", remark: "", max_retry: 10, time_out: 60, strategy: "lottery", breaker: false, sticky: false, sticky_ttl: 0 });
     setOpen(true);
   };
 
@@ -279,6 +289,7 @@ export default function ModelsPage() {
                   <SelectItem value="all">全部</SelectItem>
                   <SelectItem value="lottery">Lottery</SelectItem>
                   <SelectItem value="rotor">Rotor</SelectItem>
+                  <SelectItem value="priority">Priority</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -544,12 +555,48 @@ export default function ModelsPage() {
                     <div className="space-y-0.5">
                       <FormLabel className="text-base">熔断</FormLabel>
                     </div>
+                      <FormControl>
+                      <Checkbox checked={field.value} onCheckedChange={field.onChange} />
+                    </FormControl>
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="sticky"
+                render={({ field }) => (
+                  <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
+                    <div className="space-y-0.5">
+                      <FormLabel className="text-base">IP 亲和性</FormLabel>
+                      <p className="text-[13px] text-muted-foreground">同客户端 IP 在 TTL 内尽量粘性到同一 provider.</p>
+                    </div>
                     <FormControl>
                       <Checkbox checked={field.value} onCheckedChange={field.onChange} />
                     </FormControl>
                   </FormItem>
                 )}
               />
+
+              {form.watch("sticky") && (
+                <FormField
+                  control={form.control}
+                  name="sticky_ttl"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>亲和缓存 TTL(秒, 0=默认600)</FormLabel>
+                      <FormControl>
+                        <Input
+                          type="number"
+                          {...field}
+                          onChange={e => field.onChange(+e.target.value)}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              )}
 
               <FormField
                 control={form.control}
@@ -570,6 +617,11 @@ export default function ModelsPage() {
                           value: "rotor",
                           title: "Rotor",
                           desc: "按权重循环轮转, 适合需要缓存命中场景.",
+                        },
+                        {
+                          value: "priority",
+                          title: "Priority",
+                          desc: "按优先级分层, 高优先级全部失败后降到下一层.",
                         },
                       ].map((option) => (
                         <label
