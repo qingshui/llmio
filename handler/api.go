@@ -30,12 +30,14 @@ type ProviderRequest struct {
 
 // ModelRequest represents the request body for creating/updating a model
 type ModelRequest struct {
-	Name     string `json:"name"`
-	Remark   string `json:"remark"`
-	MaxRetry int    `json:"max_retry"`
-	TimeOut  int    `json:"time_out"`
-	Strategy string `json:"strategy"`
-	Breaker  bool   `json:"breaker"`
+	Name      string `json:"name"`
+	Remark    string `json:"remark"`
+	MaxRetry  int    `json:"max_retry"`
+	TimeOut   int    `json:"time_out"`
+	Strategy  string `json:"strategy"`
+	Breaker   bool   `json:"breaker"`
+	Sticky    bool   `json:"sticky"`
+	StickyTTL int    `json:"sticky_ttl"`
 }
 
 type ModelOrderRequest struct {
@@ -54,6 +56,7 @@ type ModelWithProviderRequest struct {
 	CustomerHeaders  map[string]string `json:"customer_headers"`
 	ExtraBody        map[string]any    `json:"extra_body"`
 	Weight           int               `json:"weight"`
+	Priority         int               `json:"priority"`
 	InputPrice       float64           `json:"input_price"`
 	CacheReadPrice   float64           `json:"cache_read_price"`
 	OutputPrice      float64           `json:"output_price"`
@@ -258,7 +261,7 @@ func GetModels(c *gin.Context) {
 
 	if strategy := strings.TrimSpace(c.Query("strategy")); strategy != "" {
 		switch strategy {
-		case consts.BalancerLottery, consts.BalancerRotor:
+		case consts.BalancerLottery, consts.BalancerRotor, consts.BalancerPriority:
 			query = query.Where("strategy = ?", strategy)
 		default:
 			common.BadRequest(c, "invalid strategy filter")
@@ -327,6 +330,8 @@ func CreateModel(c *gin.Context) {
 		Strategy:     strategy,
 		Breaker:      &req.Breaker,
 		DisplayOrder: maxDisplayOrder + 1,
+		Sticky:       &req.Sticky,
+		StickyTTL:    req.StickyTTL,
 	}
 
 	if err := gorm.G[models.Model](models.DB).Create(c.Request.Context(), &model); err != nil {
@@ -370,12 +375,14 @@ func UpdateModel(c *gin.Context) {
 
 	// Update fields
 	updates := models.Model{
-		Name:     req.Name,
-		Remark:   req.Remark,
-		MaxRetry: req.MaxRetry,
-		TimeOut:  req.TimeOut,
-		Strategy: strategy,
-		Breaker:  &req.Breaker,
+		Name:      req.Name,
+		Remark:    req.Remark,
+		MaxRetry:  req.MaxRetry,
+		TimeOut:   req.TimeOut,
+		Strategy:  strategy,
+		Breaker:   &req.Breaker,
+		Sticky:    &req.Sticky,
+		StickyTTL: req.StickyTTL,
 	}
 
 	if _, err := gorm.G[models.Model](models.DB).Where("id = ?", id).Updates(c.Request.Context(), updates); err != nil {
@@ -612,6 +619,7 @@ func CreateModelProvider(c *gin.Context) {
 		CustomerHeaders:  customerHeaders,
 		ExtraBody:        extraBody,
 		Weight:           req.Weight,
+		Priority:         req.Priority,
 		InputPrice:       &req.InputPrice,
 		CacheReadPrice:   &req.CacheReadPrice,
 		OutputPrice:      &req.OutputPrice,
@@ -678,6 +686,7 @@ func UpdateModelProvider(c *gin.Context) {
 		CustomerHeaders:  customerHeaders,
 		ExtraBody:        extraBody,
 		Weight:           req.Weight,
+		Priority:         req.Priority,
 		InputPrice:       &req.InputPrice,
 		CacheReadPrice:   &req.CacheReadPrice,
 		OutputPrice:      &req.OutputPrice,
