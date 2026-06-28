@@ -101,7 +101,12 @@
     "strategy_rotor_title": "Rotor",
     "strategy_rotor_desc": "按权重循环轮转, 适合需要缓存命中场景.",
     "saving": "保存中...",
-    "cancel": "取消"
+    "cancel": "取消",
+    "sticky": "IP 亲和性",
+    "sticky_desc": "同一客户端 IP 在 TTL 内尽量粘性到同一 provider, 利于上游缓存命中.",
+    "sticky_ttl": "亲和缓存 TTL(秒, 0=默认600)",
+    "strategy_priority_title": "Priority",
+    "strategy_priority_desc": "按优先级分层, 高优先级全部失败后降到下一层."
   },
   "association_form": {
     "add_title": "添加关联",

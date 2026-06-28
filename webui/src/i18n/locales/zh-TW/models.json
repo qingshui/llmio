@@ -101,7 +101,12 @@
     "strategy_rotor_title": "Rotor",
     "strategy_rotor_desc": "依權重循環輪轉，適合需要快取命中的場景。",
     "saving": "儲存中...",
-    "cancel": "取消"
+    "cancel": "取消",
+    "sticky": "IP 親和性",
+    "sticky_desc": "同一用戶端 IP 在 TTL 內盡量黏性到同一 provider, 利於上游快取命中.",
+    "sticky_ttl": "親和快取 TTL(秒, 0=預設600)",
+    "strategy_priority_title": "Priority",
+    "strategy_priority_desc": "依優先級分層, 高優先級全部失敗後降到下一層."
   },
   "association_form": {
     "add_title": "新增關聯",

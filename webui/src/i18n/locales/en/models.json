@@ -101,7 +101,12 @@
     "strategy_rotor_title": "Rotor",
     "strategy_rotor_desc": "Rotates sequentially by weight. Best for cache-hit scenarios.",
     "saving": "Saving...",
-    "cancel": "Cancel"
+    "cancel": "Cancel",
+    "sticky": "IP Affinity",
+    "sticky_desc": "Pin same client IP to one provider within TTL for better upstream cache hits.",
+    "sticky_ttl": "Sticky TTL (s, 0=default 600)",
+    "strategy_priority_title": "Priority",
+    "strategy_priority_desc": "Tiered by priority. Falls back to lower tier only after higher tier fully fails."
   },
   "association_form": {
     "add_title": "Add Association",

@@ -1469,8 +1469,8 @@ export default function ModelProvidersPage() {
                         },
                         {
                           value: "priority",
-                          title: "Priority",
-                          desc: "按优先级分层, 高优先级全部失败后降到下一层.",
+                          title: t('model_form.strategy_priority_title'),
+                          desc: t('model_form.strategy_priority_desc'),
                         },
                       ].map((option) => (
                         <label
@@ -1496,6 +1496,42 @@ export default function ModelProvidersPage() {
                   </FormItem>
                 )}
               />
+
+              <FormField
+                control={modelEditForm.control}
+                name="sticky"
+                render={({ field }) => (
+                  <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
+                    <div className="space-y-0.5">
+                      <FormLabel className="text-base">{t('model_form.sticky')}</FormLabel>
+                      <p className="text-[13px] text-muted-foreground">{t('model_form.sticky_desc')}</p>
+                    </div>
+                    <FormControl>
+                      <Checkbox checked={field.value} onCheckedChange={field.onChange} />
+                    </FormControl>
+                  </FormItem>
+                )}
+              />
+
+              {modelEditForm.watch("sticky") && (
+                <FormField
+                  control={modelEditForm.control}
+                  name="sticky_ttl"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{t('model_form.sticky_ttl')}</FormLabel>
+                      <FormControl>
+                        <Input
+                          type="number"
+                          {...field}
+                          onChange={e => field.onChange(+e.target.value)}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              )}
 
               <DialogFooter>
                 <Button type="button" variant="outline" onClick={closeModelEditDialog} disabled={modelEditSaving}>
