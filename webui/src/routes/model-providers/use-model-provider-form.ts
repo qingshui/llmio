@@ -119,7 +119,7 @@ export const useModelProviderForm = ({
       customer_headers: headers,
       extra_body: extraBody,
       weight: values.weight,
-      priority: values.priority,
+      priority: values.priority ?? 0,
       input_price: values.input_price ?? 0,
       cache_read_price: values.cache_read_price ?? 0,
       output_price: values.output_price ?? 0,

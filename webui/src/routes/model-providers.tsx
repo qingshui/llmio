@@ -93,6 +93,8 @@ const modelEditSchema = z.object({
   time_out: z.number().min(0, { message: "超时时间不能为负数" }),
   strategy: z.enum(["lottery", "rotor"]),
   breaker: z.boolean(),
+  sticky: z.boolean(),
+  sticky_ttl: z.number().int().min(0),
 });
 
 export default function ModelProvidersPage() {
@@ -138,6 +140,8 @@ export default function ModelProvidersPage() {
       time_out: 60,
       strategy: "lottery",
       breaker: false,
+      sticky: false,
+      sticky_ttl: 0,
     },
   });
 
@@ -543,6 +547,8 @@ export default function ModelProvidersPage() {
       time_out: model.TimeOut,
       strategy: model.Strategy === "rotor" ? "rotor" : "lottery",
       breaker: model.Breaker ?? false,
+      sticky: model.Sticky ?? false,
+      sticky_ttl: model.StickyTTL ?? 0,
     });
     setModelEditOpen(true);
   };
@@ -556,6 +562,8 @@ export default function ModelProvidersPage() {
       time_out: 60,
       strategy: "lottery",
       breaker: false,
+      sticky: false,
+      sticky_ttl: 0,
     });
     setModelEditOpen(true);
   };
@@ -570,6 +578,8 @@ export default function ModelProvidersPage() {
       time_out: 60,
       strategy: "lottery",
       breaker: false,
+      sticky: false,
+      sticky_ttl: 0,
     });
     setModelEditSaving(false);
   };
@@ -585,6 +595,8 @@ export default function ModelProvidersPage() {
           time_out: values.time_out,
           strategy: values.strategy,
           breaker: values.breaker,
+          sticky: values.sticky,
+          sticky_ttl: values.sticky_ttl,
         });
 
         setModels((prev) =>
@@ -598,6 +610,8 @@ export default function ModelProvidersPage() {
                 TimeOut: updated.TimeOut,
                 Strategy: updated.Strategy,
                 Breaker: updated.Breaker,
+                Sticky: updated.Sticky,
+                StickyTTL: updated.StickyTTL,
               }
               : model
           )
@@ -611,6 +625,8 @@ export default function ModelProvidersPage() {
           time_out: values.time_out,
           strategy: values.strategy,
           breaker: values.breaker,
+          sticky: values.sticky,
+          sticky_ttl: values.sticky_ttl,
         });
 
         setModels((prev) => sortCardModels([...prev, created]));
