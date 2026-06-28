@@ -21,6 +21,8 @@ export interface Model {
   Strategy: string;
   Breaker?: boolean | null;
   DisplayOrder?: number;
+  Sticky: boolean | null;
+  StickyTTL: number;
 }
 
 export interface ModelWithProvider {
@@ -36,6 +38,7 @@ export interface ModelWithProvider {
   ExtraBody: Record<string, unknown> | null;
   Status: boolean | null;
   Weight: number;
+  Priority: number;
   InputPrice: number;
   CacheReadPrice: number;
   OutputPrice: number;
@@ -209,6 +212,8 @@ export async function createModel(model: {
   time_out: number;
   strategy: string;
   breaker: boolean;
+  sticky: boolean;
+  sticky_ttl: number;
 }): Promise<Model> {
   return apiRequest<Model>('/models', {
     method: 'POST',
@@ -223,6 +228,8 @@ export async function updateModel(id: number, model: {
   time_out?: number;
   strategy?: string;
   breaker?: boolean;
+  sticky?: boolean;
+  sticky_ttl?: number;
 }): Promise<Model> {
   return apiRequest<Model>(`/models/${id}`, {
     method: 'PUT',
@@ -333,6 +340,7 @@ export async function createModelProvider(association: {
   customer_headers: Record<string, string>;
   extra_body: Record<string, unknown>;
   weight: number;
+  priority: number;
   input_price: number;
   cache_read_price: number;
   output_price: number;
@@ -355,6 +363,7 @@ export async function updateModelProvider(id: number, association: {
   customer_headers?: Record<string, string>;
   extra_body?: Record<string, unknown>;
   weight?: number;
+  priority?: number;
   input_price?: number;
   cache_read_price?: number;
   output_price?: number;
