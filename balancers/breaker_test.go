@@ -217,3 +217,14 @@ func TestBreakerHalfOpenDeleteReopens(t *testing.T) {
 		t.Fatalf("underlying Delete calls = %v, want [7]", spy.deletes)
 	}
 }
+
+func TestBreakerHasDelegates(t *testing.T) {
+	inner := NewLottery(map[uint]int{1: 1, 2: 2})
+	b := BalancerWrapperBreaker(inner)
+	if !b.Has(1) {
+		t.Errorf("expected Has(1)=true via delegation")
+	}
+	if b.Has(999) {
+		t.Errorf("expected Has(999)=false via delegation")
+	}
+}

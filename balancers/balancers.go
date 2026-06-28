@@ -136,3 +136,9 @@ func (w *Rotor) Has(key uint) bool {
 	}
 	return false
 }
+
+// hasChecker 用于校验某个 key 是否仍在 balancer 候选池中。
+// sticky 在 Pop 命中缓存时用它校验缓存项是否仍有效。
+type hasChecker interface {
+	Has(uint) bool
+}

@@ -105,3 +105,10 @@ func (b *Breaker) Success(key uint) {
 	}
 	b.Balancer.Success(key)
 }
+
+func (b *Breaker) Has(key uint) bool {
+	if h, ok := b.Balancer.(hasChecker); ok {
+		return h.Has(key)
+	}
+	return true
+}
