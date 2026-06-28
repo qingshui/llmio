@@ -102,17 +102,17 @@ export function ModelProviderFormDialog({
   const { t } = useTranslation(['models', 'common']);
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[85vh] flex flex-col">
-        <DialogHeader>
+      <DialogContent className="max-h-[calc(100dvh-2rem)] flex flex-col overflow-hidden p-4 sm:p-6">
+        <DialogHeader className="shrink-0">
           <DialogTitle>
             {editingAssociation ? t('association_form.edit_title') : t('association_form.add_title')}
           </DialogTitle>
         </DialogHeader>
 
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="flex flex-col gap-4 flex-1 min-h-0">
-            <div className="space-y-4 overflow-y-auto pr-1 sm:pr-2 max-h-[60vh] flex-1 min-h-0">
-              <div className="grid grid-cols-2 gap-3">
+          <form onSubmit={form.handleSubmit(onSubmit)} className="flex flex-col gap-4 flex-1 min-h-0 overflow-hidden">
+            <div className="space-y-4 overflow-y-auto pr-1 sm:pr-2 flex-1 min-h-0">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <FormField
                   control={form.control}
                   name="model_id"
@@ -507,7 +507,7 @@ export function ModelProviderFormDialog({
               </div>
             </div>
 
-            <DialogFooter>
+            <DialogFooter className="shrink-0 pt-1">
               <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
                 {t('association_form.cancel')}
               </Button>

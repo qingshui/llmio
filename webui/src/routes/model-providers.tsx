@@ -1357,15 +1357,16 @@ export default function ModelProvidersPage() {
       </AlertDialog>
 
       <Dialog open={modelEditOpen} onOpenChange={(open) => (open ? setModelEditOpen(true) : closeModelEditDialog())}>
-        <DialogContent>
-          <DialogHeader>
+        <DialogContent className="max-h-[calc(100dvh-2rem)] flex flex-col overflow-hidden p-4 sm:p-6">
+          <DialogHeader className="shrink-0">
             <DialogTitle>{editingModel ? t('model_form.edit_title') : t('model_form.add_title')}</DialogTitle>
             <DialogDescription>
               {editingModel ? t('model_form.edit_desc') : t('model_form.add_desc')}
             </DialogDescription>
           </DialogHeader>
           <Form {...modelEditForm}>
-            <form onSubmit={modelEditForm.handleSubmit(handleModelSave)} className="space-y-4">
+            <form onSubmit={modelEditForm.handleSubmit(handleModelSave)} className="flex-1 min-h-0 flex flex-col overflow-hidden">
+              <div className="flex-1 overflow-y-auto space-y-4 pr-1">
               <FormField
                 control={modelEditForm.control}
                 name="name"
@@ -1394,7 +1395,7 @@ export default function ModelProvidersPage() {
                 )}
               />
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <FormField
                   control={modelEditForm.control}
                   name="max_retry"
@@ -1532,8 +1533,9 @@ export default function ModelProvidersPage() {
                   )}
                 />
               )}
+              </div>
 
-              <DialogFooter>
+              <DialogFooter className="shrink-0 pt-1">
                 <Button type="button" variant="outline" onClick={closeModelEditDialog} disabled={modelEditSaving}>
                   {t('model_form.cancel')}
                 </Button>
