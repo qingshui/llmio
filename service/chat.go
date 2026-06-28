@@ -39,6 +39,8 @@ func BalanceChat(ctx context.Context, start time.Time, style string, before Befo
 		balancer = balancers.NewLottery(providersWithMeta.WeightItems)
 	case consts.BalancerRotor:
 		balancer = balancers.NewRotor(providersWithMeta.WeightItems)
+	case consts.BalancerPriority:
+		balancer = balancers.NewPriority(providersWithMeta.WeightItems, providersWithMeta.PriorityItems)
 	default:
 		balancer = balancers.NewLottery(providersWithMeta.WeightItems)
 	}
@@ -46,6 +48,12 @@ func BalanceChat(ctx context.Context, start time.Time, style string, before Befo
 	// 是否开启熔断
 	if providersWithMeta.Breaker {
 		balancer = balancers.BalancerWrapperBreaker(balancer)
+	}
+
+	// 是否开启 IP 亲和性（最外层，breaker 之外）
+	if providersWithMeta.Sticky && reqMeta.RemoteIP != "" {
+		ttl := time.Duration(providersWithMeta.StickyTTL) * time.Second
+		balancer = balancers.NewSticky(balancer, before.Model, reqMeta.RemoteIP, ttl)
 	}
 
 	// 设置请求超时
@@ -286,11 +294,14 @@ func BuildHeaders(source http.Header, withHeader bool, customHeaders map[string]
 type ProvidersWithMeta struct {
 	ModelWithProviderMap map[uint]models.ModelWithProvider
 	WeightItems          map[uint]int
+	PriorityItems        map[uint]int
 	ProviderMap          map[uint]models.Provider
 	MaxRetry             int
 	TimeOut              int
 	Strategy             string
 	Breaker              bool
+	Sticky               bool
+	StickyTTL            int
 }
 
 func ProvidersWithMetaBymodelsName(ctx context.Context, style string, before Before) (*ProvidersWithMeta, error) {
@@ -362,20 +373,25 @@ func ProvidersWithMetaBymodelsName(ctx context.Context, style string, before Bef
 	providerMap := lo.KeyBy(providers, func(p models.Provider) uint { return p.ID })
 
 	weightItems := make(map[uint]int)
+	priorityItems := make(map[uint]int)
 	for _, mp := range modelWithProviders {
 		if _, ok := providerMap[mp.ProviderID]; !ok {
 			continue
 		}
 		weightItems[mp.ID] = mp.Weight
+		priorityItems[mp.ID] = mp.Priority
 	}
 
 	return &ProvidersWithMeta{
 		ModelWithProviderMap: modelWithProviderMap,
 		WeightItems:          weightItems,
+		PriorityItems:        priorityItems,
 		ProviderMap:          providerMap,
 		MaxRetry:             model.MaxRetry,
 		TimeOut:              model.TimeOut,
 		Strategy:             model.Strategy,
 		Breaker:              lo.FromPtrOr(model.Breaker, false),
+		Sticky:               lo.FromPtrOr(model.Sticky, false),
+		StickyTTL:            model.StickyTTL,
 	}, nil
 }
