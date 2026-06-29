@@ -5,11 +5,11 @@ import (
 	"errors"
 	"slices"
 
-	"github.com/atopos31/llmio/common"
-	"github.com/atopos31/llmio/consts"
-	"github.com/atopos31/llmio/models"
-	"github.com/atopos31/llmio/providers"
-	"github.com/atopos31/llmio/service"
+	"llmio/common"
+	"llmio/consts"
+	"llmio/models"
+	"llmio/providers"
+	"llmio/service"
 	"github.com/gin-gonic/gin"
 )
 

@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/atopos31/llmio/consts"
+	"llmio/consts"
 )
 
 // Gemini 调用 Gemini 原生 REST API。

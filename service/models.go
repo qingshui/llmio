@@ -3,7 +3,7 @@ package service
 import (
 	"context"
 
-	"github.com/atopos31/llmio/models"
+	"llmio/models"
 	"github.com/samber/lo"
 	"gorm.io/gorm"
 )

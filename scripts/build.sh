@@ -45,7 +45,7 @@ else
 fi
 
 # ---------- 后端 ----------
-LDFLAGS="-s -w -X github.com/atopos31/llmio/consts.Version=${VERSION}"
+LDFLAGS="-s -w -X llmio/consts.Version=${VERSION}"
 if [ "$USE_CGO" -eq 0 ]; then
   CGO_FLAGS="CGO_ENABLED=0"
   EXTRA="-trimpath"

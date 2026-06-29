@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/atopos31/llmio/models"
+	"llmio/models"
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
 )

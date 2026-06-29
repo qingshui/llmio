@@ -6,8 +6,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/atopos31/llmio/consts"
-	"github.com/atopos31/llmio/pkg/env"
+	"llmio/consts"
+	"llmio/pkg/env"
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
 )

@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/atopos31/llmio/common"
-	"github.com/atopos31/llmio/models"
+	"llmio/common"
+	"llmio/models"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )

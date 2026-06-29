@@ -7,10 +7,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/atopos31/llmio/common"
-	"github.com/atopos31/llmio/consts"
-	"github.com/atopos31/llmio/models"
-	"github.com/atopos31/llmio/pkg/token"
+	"llmio/common"
+	"llmio/consts"
+	"llmio/models"
+	"llmio/pkg/token"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )

@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/atopos31/llmio/models"
+	"llmio/models"
 	"golang.org/x/sync/singleflight"
 	"gorm.io/gorm"
 )

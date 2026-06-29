@@ -1,8 +1,8 @@
 package handler
 
 import (
-	"github.com/atopos31/llmio/common"
-	"github.com/atopos31/llmio/consts"
+	"llmio/common"
+	"llmio/consts"
 	"github.com/gin-gonic/gin"
 )
 

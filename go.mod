@@ -1,4 +1,4 @@
-module github.com/atopos31/llmio
+module llmio
 
 go 1.26.1
 

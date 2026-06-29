@@ -3,7 +3,7 @@ package handler
 import (
 	"net/http"
 
-	"github.com/atopos31/llmio/common"
+	"llmio/common"
 	"github.com/gin-gonic/gin"
 )
 

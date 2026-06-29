@@ -7,9 +7,9 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/atopos31/llmio/common"
-	"github.com/atopos31/llmio/models"
-	"github.com/atopos31/llmio/providers"
+	"llmio/common"
+	"llmio/models"
+	"llmio/providers"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )

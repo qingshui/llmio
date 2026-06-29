@@ -7,7 +7,7 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/atopos31/llmio/models"
+	"llmio/models"
 	"gorm.io/gorm"
 )
 

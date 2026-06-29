@@ -6,9 +6,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/atopos31/llmio/common"
-	"github.com/atopos31/llmio/consts"
-	"github.com/atopos31/llmio/service"
+	"llmio/common"
+	"llmio/consts"
+	"llmio/service"
 	"github.com/gin-gonic/gin"
 	"github.com/samber/lo"
 )

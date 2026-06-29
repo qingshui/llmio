@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/atopos31/llmio/consts"
-	"github.com/atopos31/llmio/models"
+	"llmio/consts"
+	"llmio/models"
 	"github.com/gin-gonic/gin"
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"

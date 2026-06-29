@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/atopos31/llmio/consts"
+	"llmio/consts"
 	"gorm.io/gorm"
 )
 

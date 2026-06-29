@@ -11,7 +11,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/atopos31/llmio/models"
+	"llmio/models"
 	"github.com/tidwall/gjson"
 )
 

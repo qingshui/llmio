@@ -6,7 +6,7 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/atopos31/llmio/consts"
+	"llmio/consts"
 )
 
 type ModelList struct {
