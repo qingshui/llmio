@@ -420,7 +420,7 @@ export default function AuthKeysPage() {
             </div>
           ) : (
             <div className="h-full flex flex-col">
-              <div className="hidden sm:block flex-1 overflow-y-auto">
+              <div className="hidden sm:block flex-1 overflow-auto">
                 <div className="w-full">
                   <Table className="min-w-[960px]">
                     <TableHeader className="z-10 sticky top-0 bg-secondary/90 backdrop-blur text-secondary-foreground">

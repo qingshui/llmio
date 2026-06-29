@@ -234,6 +234,13 @@ func UpdateAuthKey(c *gin.Context) {
 		return
 	}
 
+	if update.Key != "" {
+		if _, err := gorm.G[models.AuthKey](models.DB).Where("id = ?", id).Update(ctx, "key", update.Key); err != nil {
+			common.InternalServerError(c, "Failed to update key: "+err.Error())
+			return
+		}
+	}
+
 	updated, err := gorm.G[models.AuthKey](models.DB).Where("id = ?", id).First(ctx)
 	if err != nil {
 		common.InternalServerError(c, "Failed to load updated auth key: "+err.Error())
