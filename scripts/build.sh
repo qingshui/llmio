@@ -31,11 +31,11 @@ done
 # ---------- 前端 ----------
 if [ "$SKIP_WEBUI" -eq 0 ]; then
   if [ ! -d "$WEBUI_DIR/node_modules" ]; then
-    echo "[build] 安装前端依赖 (pnpm install)..."
-    ( cd "$WEBUI_DIR" && pnpm install )
+    echo "[build] 安装前端依赖 (pnpm install || true)..."
+    ( cd "$WEBUI_DIR" && pnpm install || true )
   fi
   echo "[build] 构建前端 (vite build) -> $DIST_DIR"
-  ( cd "$WEBUI_DIR" && pnpm run build )
+  ( cd "$WEBUI_DIR" && node_modules/.bin/tsc -b && node_modules/.bin/vite build )
 else
   if [ ! -f "$DIST_DIR/index.html" ]; then
     echo "[build] 错误：--skip-webui 但 $DIST_DIR/index.html 不存在，请先构建前端" >&2
