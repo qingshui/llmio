@@ -7,8 +7,8 @@ import (
 	"log/slog"
 	"time"
 
-	"llmio/models"
 	"gorm.io/gorm"
+	"llmio/models"
 )
 
 const (
@@ -24,7 +24,7 @@ func DefaultLogCleanupPolicy() *models.LogCleanupPolicy {
 }
 
 func GetLogCleanupPolicy(ctx context.Context) (*models.LogCleanupPolicy, error) {
-	config, err := gorm.G[models.Config](models.DB).Where("key = ?", models.KeyLogCleanupPolicy).First(ctx)
+	config, err := gorm.G[models.Config](models.DB).Where(&models.Config{Key: models.KeyLogCleanupPolicy}).First(ctx)
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return DefaultLogCleanupPolicy(), nil
@@ -70,6 +70,14 @@ func CleanLogsByDays(ctx context.Context, days int) (int64, error) {
 	})
 	if err != nil {
 		return 0, err
+	}
+
+	// chat_io 文件按天存储，整日过期的日志文件直接整删；当天部分过期时
+	// 文件保留（保留当天未过期的记录），等该日全部过期后再由后续清理删除。
+	if removed, ferr := DeleteChatIOBeforeDate(cutoffTime); ferr != nil {
+		slog.Error("delete chat_io files failed", "error", ferr)
+	} else if removed > 0 {
+		slog.Info("chat_io files removed", "count", removed)
 	}
 
 	return deletedCount, nil

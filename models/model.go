@@ -106,8 +106,6 @@ type PromptTokensDetails struct {
 type ChatIO struct {
 	gorm.Model
 	LogId uint
-	Input string
-	OutputUnion
 }
 
 type OutputUnion struct {

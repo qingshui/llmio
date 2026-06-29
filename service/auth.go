@@ -7,16 +7,16 @@ import (
 	"sync"
 	"time"
 
-	"llmio/models"
 	"golang.org/x/sync/singleflight"
 	"gorm.io/gorm"
+	"llmio/models"
 )
 
 var singleFlightGroup singleflight.Group
 
 func GetAuthKey(ctx context.Context, key string) (*models.AuthKey, error) {
 	ch := singleFlightGroup.DoChan(key, func() (any, error) {
-		authKey, err := gorm.G[models.AuthKey](models.DB).Where("key = ?", key).Where("status = ?", true).First(ctx)
+		authKey, err := gorm.G[models.AuthKey](models.DB).Where(&models.AuthKey{Key: key}).Where("status = ?", true).First(ctx)
 		return &authKey, err
 	})
 

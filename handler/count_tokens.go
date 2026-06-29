@@ -7,17 +7,17 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 	"llmio/common"
 	"llmio/models"
 	"llmio/providers"
-	"github.com/gin-gonic/gin"
-	"gorm.io/gorm"
 )
 
 func CountTokens(c *gin.Context) {
 	ctx := c.Request.Context()
 
-	config, err := gorm.G[models.Config](models.DB).Where("key = ?", models.KeyAnthropicCountTokens).First(ctx)
+	config, err := gorm.G[models.Config](models.DB).Where(&models.Config{Key: models.KeyAnthropicCountTokens}).First(ctx)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			common.NotFound(c, "Anthropic count tokens config not found")
@@ -85,7 +85,7 @@ type CountTokensResponse struct {
 func TestCountTokens(c *gin.Context) {
 	ctx := c.Request.Context()
 
-	config, err := gorm.G[models.Config](models.DB).Where("key = ?", models.KeyAnthropicCountTokens).First(ctx)
+	config, err := gorm.G[models.Config](models.DB).Where(&models.Config{Key: models.KeyAnthropicCountTokens}).First(ctx)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			common.NotFound(c, "Anthropic count tokens config not found")

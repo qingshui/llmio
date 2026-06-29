@@ -13,6 +13,8 @@
 #   LLMIO_SERVER_PORT 监听端口，默认 8070
 #   GIN_MODE         release/debug，默认 release
 #   TZ               时区，默认 Asia/Shanghai
+#   DB_DRIVER        数据库驱动 sqlite/mysql，默认 sqlite
+#   DATABASE_URL     MySQL DSN，DB_DRIVER=mysql 时必填
 
 set -euo pipefail
 
@@ -39,6 +41,8 @@ fi
 LLMIO_SERVER_PORT="${LLMIO_SERVER_PORT:-8070}"
 GIN_MODE="${GIN_MODE:-release}"
 TZ="${TZ:-Asia/Shanghai}"
+DB_DRIVER="${DB_DRIVER:-sqlite}"
+DATABASE_URL="${DATABASE_URL:-}"
 
 mkdir -p "$LOG_DIR" "$(dirname "$PID_FILE")"
 
@@ -73,6 +77,8 @@ start() {
     PATH="$PATH" \
     TOKEN="$TOKEN" \
     LLMIO_SERVER_PORT="$LLMIO_SERVER_PORT" \
+    DB_DRIVER="$DB_DRIVER" \
+    DATABASE_URL="$DATABASE_URL" \
     GIN_MODE="$GIN_MODE" \
     TZ="$TZ" \
     "$BIN" > "$LOG_FILE" 2>&1 < /dev/null &

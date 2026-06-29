@@ -153,11 +153,22 @@ All routes are defined in `main.go`. Three provider-specific groups (`/openai`, 
 | `GIN_MODE` | Gin runtime mode (`debug`/`release`) | `debug` |
 | `LLMIO_SERVER_PORT` | Server listen port | `7070` |
 | `TZ` | Timezone for logs/scheduling | Host default |
-| `DB_VACUUM` | Run SQLite VACUUM on startup | disabled |
+| `DB_DRIVER` | Database driver (`sqlite` / `mysql`) | `sqlite` |
+| `DATABASE_URL` | MySQL DSN, required when `DB_DRIVER=mysql` (e.g. `user:pass@tcp(host:3306)/llmio?charset=utf8mb4&parseTime=True&loc=Local`) | (empty) |
+| `DB_VACUUM` | Run SQLite VACUUM on startup (SQLite only) | disabled |
 
 ### Database
 
-SQLite via GORM at `./db/llmio.db` (auto-created). Auto-migration on startup. Key tables: Provider, Model, ModelProvider (join), ChatLog, ChatIO, AuthKey, Config.
+Driver is selected by `DB_DRIVER`:
+
+- `sqlite` (default): SQLite at `./db/llmio.db` (auto-created). Auto-migration on startup.
+- `mysql`: connects via `DATABASE_URL` DSN; AutoMigrate creates the same schema. Tested against MariaDB 5.5 / MySQL 5.x; `utf8mb4` charset recommended because ChatIO bodies may contain multibyte content.
+
+Key tables: Provider, Model, ModelProvider (join), ChatLog, ChatIO, AuthKey, Config.
+
+### Chat IO Storage
+
+`ChatIO` (request/response bodies) is stored on disk as append-only per-day log files under `logs/chat_io/<YYYY-MM-DD>.log`. Each record is two lines: a JSON header (`log_id`, `type` ∈ {`input`,`output`}, `length`, `created_at`) followed by the raw body verbatim. The `chat_ios` DB table only keeps the `log_id` association to `chat_logs`; `Input`/`OutputUnion` fields were removed from the model. Reads locate the day file via `chat_logs.created_at`. Log retention cleanup (`CleanLogsByDays`) removes whole day files whose date is strictly before the cutoff.
 
 ### When Modifying Code
 

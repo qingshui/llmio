@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
-	"llmio/models"
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
+	"llmio/models"
 )
 
 func setupLogCleanupTestDB(t *testing.T) func() {
@@ -49,10 +49,10 @@ func TestCleanLogsByDays(t *testing.T) {
 		t.Fatalf("failed to date new log: %v", err)
 	}
 
-	if err := gorm.G[models.ChatIO](models.DB).Create(ctx, &models.ChatIO{LogId: oldLog.ID, Input: "old"}); err != nil {
+	if err := gorm.G[models.ChatIO](models.DB).Create(ctx, &models.ChatIO{LogId: oldLog.ID}); err != nil {
 		t.Fatalf("failed to create old chat io: %v", err)
 	}
-	if err := gorm.G[models.ChatIO](models.DB).Create(ctx, &models.ChatIO{LogId: newLog.ID, Input: "new"}); err != nil {
+	if err := gorm.G[models.ChatIO](models.DB).Create(ctx, &models.ChatIO{LogId: newLog.ID}); err != nil {
 		t.Fatalf("failed to create new chat io: %v", err)
 	}
 

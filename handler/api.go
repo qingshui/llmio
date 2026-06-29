@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"slices"
@@ -8,14 +9,14 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gin-gonic/gin"
+	"github.com/samber/lo"
+	"gorm.io/gorm"
 	"llmio/common"
 	"llmio/consts"
 	"llmio/models"
 	"llmio/providers"
 	"llmio/service"
-	"github.com/gin-gonic/gin"
-	"github.com/samber/lo"
-	"gorm.io/gorm"
 )
 
 // ProviderRequest represents the request body for creating/updating a provider
@@ -885,29 +886,39 @@ func GetRequestLogs(c *gin.Context) {
 func GetChatIO(c *gin.Context) {
 	id := c.Param("id")
 
-	chatIO, err := gorm.G[models.ChatIO](models.DB).Where("log_id = ?", id).First(c.Request.Context())
+	// chat_io 内容已迁移到文件存储（logs/chat_io/<date>.log），
+	// 数据库里的 chat_ios 表只保留与 chat_logs 的关联。
+	// 这里通过 ChatLog 的 created_at 定位到对应日期的文件，再按 log_id 读取。
+	chatLog, err := gorm.G[models.ChatLog](models.DB).Where("id = ?", id).First(c.Request.Context())
 	if err != nil {
-		common.NotFound(c, "ChatIO not found")
+		common.NotFound(c, "ChatLog not found")
 		return
 	}
 
-	// 查询关联的 ChatLog 获取 Style
-	var style string
-	chatLog, err := gorm.G[models.ChatLog](models.DB).Where("id = ?", id).First(c.Request.Context())
-	if err == nil {
-		style = chatLog.Style
+	input, outputBody, err := service.ReadChatIO(chatLog.ID, chatLog.CreatedAt)
+	if err != nil {
+		common.InternalServerError(c, "Failed to read chat IO: "+err.Error())
+		return
+	}
+
+	// output 在写入时被序列化成 JSON，这里反序列化回 OutputUnion 以保持前端响应结构
+	var output models.OutputUnion
+	if outputBody != "" {
+		if jerr := json.Unmarshal([]byte(outputBody), &output); jerr != nil {
+			// 解析失败时退化为纯字符串展示
+			output = models.OutputUnion{OfString: outputBody}
+		}
 	}
 
 	common.Success(c, gin.H{
-		"ID":            chatIO.ID,
-		"CreatedAt":     chatIO.CreatedAt,
-		"UpdatedAt":     chatIO.UpdatedAt,
-		"DeletedAt":     chatIO.DeletedAt,
-		"LogId":         chatIO.LogId,
-		"Input":         chatIO.Input,
-		"OfString":      chatIO.OfString,
-		"OfStringArray": chatIO.OfStringArray,
-		"Style":         style,
+		"ID":            chatLog.ID,
+		"CreatedAt":     chatLog.CreatedAt,
+		"UpdatedAt":     chatLog.UpdatedAt,
+		"LogId":         chatLog.ID,
+		"Input":         input,
+		"OfString":      output.OfString,
+		"OfStringArray": output.OfStringArray,
+		"Style":         chatLog.Style,
 	})
 }
 
@@ -931,7 +942,7 @@ func GetUserAgents(c *gin.Context) {
 // GetConfigByKey 获取特定配置
 func GetConfigByKey(c *gin.Context) {
 	key := c.Param("key")
-	config, err := gorm.G[models.Config](models.DB).Where("key = ?", key).First(c.Request.Context())
+	config, err := gorm.G[models.Config](models.DB).Where(&models.Config{Key: key}).First(c.Request.Context())
 
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
@@ -963,7 +974,7 @@ func UpdateConfigByKey(c *gin.Context) {
 	}
 
 	// 获取或创建配置记录
-	config, err := gorm.G[models.Config](models.DB).Where("key = ?", key).First(c.Request.Context())
+	config, err := gorm.G[models.Config](models.DB).Where(&models.Config{Key: key}).First(c.Request.Context())
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
 			// 创建新配置
@@ -982,7 +993,7 @@ func UpdateConfigByKey(c *gin.Context) {
 	} else {
 		// 更新配置值
 		config.Value = req.Value
-		if _, err := gorm.G[models.Config](models.DB).Where("key = ?", key).Updates(c.Request.Context(), config); err != nil {
+		if _, err := gorm.G[models.Config](models.DB).Where(&models.Config{Key: key}).Updates(c.Request.Context(), config); err != nil {
 			common.InternalServerError(c, "Failed to update config: "+err.Error())
 			return
 		}

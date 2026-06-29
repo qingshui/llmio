@@ -246,10 +246,7 @@ func RecordLog(ctx context.Context, reqStart time.Time, reader io.ReadCloser, pr
 	recordFunc := func() error {
 		defer reader.Close()
 		if ioLog {
-			if err := gorm.G[models.ChatIO](models.DB).Create(ctx, &models.ChatIO{
-				Input: string(before.raw),
-				LogId: logId,
-			}); err != nil {
+			if err := AppendChatIOInput(logId, string(before.raw), time.Now()); err != nil {
 				return err
 			}
 		}
@@ -266,7 +263,7 @@ func RecordLog(ctx context.Context, reqStart time.Time, reader io.ReadCloser, pr
 			return err
 		}
 		if ioLog {
-			if _, err := gorm.G[models.ChatIO](models.DB).Where("log_id = ?", logId).Updates(ctx, models.ChatIO{OutputUnion: *output}); err != nil {
+			if err := AppendChatIOOutput(logId, *output, time.Now()); err != nil {
 				return err
 			}
 		}

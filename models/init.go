@@ -3,10 +3,12 @@ package models
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 
 	"github.com/glebarez/sqlite"
+	gormmysql "gorm.io/driver/mysql"
 	"gorm.io/gorm"
 	"llmio/consts"
 	"llmio/pkg/env"
@@ -15,10 +17,13 @@ import (
 var DB *gorm.DB
 
 func Init(ctx context.Context, path string) {
-	if err := ensureDBFile(path); err != nil {
-		panic(err)
+	driver := env.GetWithDefault("DB_DRIVER", "sqlite")
+	if driver == "sqlite" {
+		if err := ensureDBFile(path); err != nil {
+			panic(err)
+		}
 	}
-	db, err := gorm.Open(sqlite.Open(path))
+	db, err := openDB(driver, path)
 	if err != nil {
 		panic(err)
 	}
@@ -76,7 +81,7 @@ func Init(ctx context.Context, path string) {
 		panic(err)
 	}
 
-	if env.GetWithDefault("DB_VACUUM", false) {
+	if driver == "sqlite" && env.GetWithDefault("DB_VACUUM", false) {
 		// 启动时执行 VACUUM 回收空间
 		if err := db.Exec("VACUUM").Error; err != nil {
 			panic(err)
@@ -119,7 +124,7 @@ func ensureModelDisplayOrder(ctx context.Context) error {
 }
 
 func ensureLogCleanupPolicyConfig(ctx context.Context) error {
-	count, err := gorm.G[Config](DB).Where("key = ?", KeyLogCleanupPolicy).Count(ctx, "*")
+	count, err := gorm.G[Config](DB).Where(&Config{Key: KeyLogCleanupPolicy}).Count(ctx, "*")
 	if err != nil {
 		return err
 	}
@@ -160,4 +165,22 @@ func ensureDBFile(path string) error {
 		return err
 	}
 	return f.Close()
+}
+
+// openDB opens a GORM DB connection based on the driver name.
+// driver="sqlite" (default): uses local file at path.
+// driver="mysql": uses DSN from DATABASE_URL env var; path arg is ignored.
+func openDB(driver, path string) (*gorm.DB, error) {
+	switch driver {
+	case "mysql":
+		dsn := env.GetWithDefault("DATABASE_URL", "")
+		if dsn == "" {
+			return nil, fmt.Errorf("DATABASE_URL is required when DB_DRIVER=mysql")
+		}
+		return gorm.Open(gormmysql.Open(dsn))
+	case "sqlite", "":
+		return gorm.Open(sqlite.Open(path))
+	default:
+		return nil, fmt.Errorf("unsupported DB_DRIVER: %s (supported: sqlite, mysql)", driver)
+	}
 }
