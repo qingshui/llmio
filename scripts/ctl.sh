@@ -69,7 +69,8 @@ start() {
 
   echo "[ctl] 启动 $APP (端口 $LLMIO_SERVER_PORT)，日志 -> $LOG_FILE"
   # setsid 让进程脱离当前会话，父进程退出后仍存活
-  setsid env \
+  setsid env -i \
+    PATH="$PATH" \
     TOKEN="$TOKEN" \
     LLMIO_SERVER_PORT="$LLMIO_SERVER_PORT" \
     GIN_MODE="$GIN_MODE" \

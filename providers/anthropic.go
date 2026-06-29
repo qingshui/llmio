@@ -20,7 +20,11 @@ type Anthropic struct {
 }
 
 func (a *Anthropic) BuildReq(ctx context.Context, header http.Header, model string, rawBody []byte) (*http.Request, error) {
-	body, err := sjson.SetBytes(rawBody, "model", model)
+	body := rawBody
+	if nb, n := normalizeRoles(body); n > 0 {
+		body = nb
+	}
+	body, err := sjson.SetBytes(body, "model", model)
 	if err != nil {
 		return nil, err
 	}
