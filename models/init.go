@@ -6,10 +6,10 @@ import (
 	"os"
 	"path/filepath"
 
-	"llmio/consts"
-	"llmio/pkg/env"
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
+	"llmio/consts"
+	"llmio/pkg/env"
 )
 
 var DB *gorm.DB

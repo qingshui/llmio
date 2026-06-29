@@ -7,23 +7,24 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 	"llmio/common"
 	"llmio/consts"
 	"llmio/models"
 	"llmio/pkg/token"
-	"github.com/gin-gonic/gin"
-	"gorm.io/gorm"
 )
 
 type AuthKeyRequest struct {
-	Name      string   `json:"name" binding:"required"`
-	Key       string   `json:"key"`
-	Status    *bool    `json:"status"`
-	IOLog     *bool    `json:"io_log"`
-	Debug     *bool    `json:"debug"`
-	AllowAll  *bool    `json:"allow_all"`
-	Models    []string `json:"models"`
-	ExpiresAt *string  `json:"expires_at"`
+	Name                string   `json:"name" binding:"required"`
+	Key                 string   `json:"key"`
+	Status              *bool    `json:"status"`
+	IOLog               *bool    `json:"io_log"`
+	Debug               *bool    `json:"debug"`
+	AllowAll            *bool    `json:"allow_all"`
+	PreferredProviderID *uint    `json:"preferred_provider_id"`
+	Models              []string `json:"models"`
+	ExpiresAt           *string  `json:"expires_at"`
 }
 
 func GetAuthKeys(c *gin.Context) {
@@ -124,14 +125,15 @@ func CreateAuthKey(c *gin.Context) {
 	}
 
 	authKey := models.AuthKey{
-		Name:      req.Name,
-		Key:       fmt.Sprintf("%s%s", consts.KeyPrefix, key),
-		Status:    req.Status,
-		IOLog:     new(ioLog),
-		Debug:     new(debug),
-		AllowAll:  req.AllowAll,
-		Models:    sanitizeModels(req.Models),
-		ExpiresAt: expiresAt,
+		Name:                req.Name,
+		Key:                 fmt.Sprintf("%s%s", consts.KeyPrefix, key),
+		Status:              req.Status,
+		IOLog:               new(ioLog),
+		Debug:               new(debug),
+		PreferredProviderID: req.PreferredProviderID,
+		AllowAll:            req.AllowAll,
+		Models:              sanitizeModels(req.Models),
+		ExpiresAt:           expiresAt,
 	}
 
 	if err := gorm.G[models.AuthKey](models.DB).Create(ctx, &authKey); err != nil {
@@ -192,13 +194,14 @@ func UpdateAuthKey(c *gin.Context) {
 	}
 
 	update := models.AuthKey{
-		Name:      req.Name,
-		Status:    req.Status,
-		IOLog:     new(ioLog),
-		Debug:     new(debug),
-		AllowAll:  req.AllowAll,
-		Models:    sanitizeModels(req.Models),
-		ExpiresAt: expiresAt,
+		Name:                req.Name,
+		Status:              req.Status,
+		IOLog:               new(ioLog),
+		Debug:               new(debug),
+		PreferredProviderID: req.PreferredProviderID,
+		AllowAll:            req.AllowAll,
+		Models:              sanitizeModels(req.Models),
+		ExpiresAt:           expiresAt,
 	}
 
 	// 若提交了新的 key 则更新 key 值（支持手动修改密钥）。
@@ -226,7 +229,7 @@ func UpdateAuthKey(c *gin.Context) {
 		}
 	}
 
-	if _, err := gorm.G[models.AuthKey](models.DB).Where("id = ?", id).Select("name", "status", "io_log", "debug", "allow_all", "models", "expires_at").Updates(ctx, update); err != nil {
+	if _, err := gorm.G[models.AuthKey](models.DB).Where("id = ?", id).Select("name", "status", "io_log", "debug", "preferred_provider_id", "allow_all", "models", "expires_at").Updates(ctx, update); err != nil {
 		common.InternalServerError(c, "Failed to update auth key: "+err.Error())
 		return
 	}

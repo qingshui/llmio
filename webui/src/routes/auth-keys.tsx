@@ -66,6 +66,8 @@ import {
   deleteAuthKey,
   toggleAuthKeyStatus,
   getModelOptions,
+  getProviders,
+  type Provider,
   type AuthKey,
   type Model
 } from "@/lib/api";
@@ -77,6 +79,7 @@ const formSchema = z.object({
   status: z.boolean(),
   io_log: z.boolean(),
   debug: z.boolean(),
+  preferred_provider_id: z.number().nullable().optional(),
   allow_all: z.boolean(),
   models: z.array(z.string()),
   expires_at: z.string().nullable().optional(),
@@ -91,6 +94,7 @@ const defaultFormValues: AuthKeyFormValues = {
   status: true,
   io_log: false,
   debug: false,
+  preferred_provider_id: null,
   allow_all: true,
   models: [],
   expires_at: null,
@@ -116,6 +120,7 @@ export default function AuthKeysPage() {
   const { t } = useTranslation(['auth-keys', 'common']);
   const [authKeys, setAuthKeys] = useState<AuthKey[]>([]);
   const [models, setModels] = useState<Model[]>([]);
+  const [providers, setProviders] = useState<Provider[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [page, setPage] = useState(1);
@@ -145,6 +150,7 @@ export default function AuthKeysPage() {
 
   useEffect(() => {
     fetchModels();
+    fetchProviders();
   }, []);
 
   useEffect(() => {
@@ -175,6 +181,15 @@ export default function AuthKeysPage() {
     try {
       const list = await getModelOptions();
       setModels(list);
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
+  const fetchProviders = async () => {
+    try {
+      const list = await getProviders();
+      setProviders(list);
     } catch (error) {
       console.error(error);
     }
@@ -229,6 +244,7 @@ export default function AuthKeysPage() {
       status: key.Status,
       io_log: key.IOLog,
       debug: key.Debug,
+      preferred_provider_id: key.PreferredProviderID ?? null,
       allow_all: key.AllowAll,
       models: key.Models ?? [],
       expires_at: key.ExpiresAt,
@@ -255,6 +271,7 @@ export default function AuthKeysPage() {
         status: values.status,
         io_log: values.io_log,
         debug: values.debug,
+        preferred_provider_id: values.preferred_provider_id ?? null,
         allow_all: values.allow_all,
         models: values.allow_all ? [] : values.models,
         expires_at: values.expires_at ?? undefined,
@@ -413,6 +430,7 @@ export default function AuthKeysPage() {
                           <TableHead>{t('table.scope')}</TableHead>
                           <TableHead>{t('table.io_log')}</TableHead>
                           <TableHead>{t('table.debug')}</TableHead>
+                          <TableHead>{t('table.preferred_provider')}</TableHead>
                           <TableHead>{t('table.expires_at')}</TableHead>
                           <TableHead>{t('table.usage_count')}</TableHead>
                           <TableHead>{t('table.last_used')}</TableHead>
@@ -481,6 +499,11 @@ export default function AuthKeysPage() {
                               <Badge variant={item.Debug ? "default" : "outline"}>
                                 {item.Debug ? t('table.debug_on') : t('table.debug_off')}
                               </Badge>
+                            </TableCell>
+                            <TableCell>
+                              {item.PreferredProviderID
+                                ? (providers.find((p) => p.ID === item.PreferredProviderID)?.Name ?? `#${item.PreferredProviderID}`)
+                                : <span className="text-muted-foreground">-</span>}
                             </TableCell>
                             <TableCell>
                               <span className={cn(
@@ -591,6 +614,12 @@ export default function AuthKeysPage() {
                         <MobileInfoItem
                           label={t('mobile.debug')}
                           value={<Badge variant={item.Debug ? "default" : "outline"}>{item.Debug ? t('table.debug_on') : t('table.debug_off')}</Badge>}
+                        />
+                        <MobileInfoItem
+                          label={t('mobile.preferred_provider')}
+                          value={item.PreferredProviderID
+                            ? (providers.find((p) => p.ID === item.PreferredProviderID)?.Name ?? `#${item.PreferredProviderID}`)
+                            : <span className="text-muted-foreground">-</span>}
                         />
                         <MobileInfoItem
                           label={t('mobile.expires_at')}
@@ -774,6 +803,37 @@ export default function AuthKeysPage() {
                     <FormControl>
                       <Switch checked={field.value} onCheckedChange={field.onChange} />
                     </FormControl>
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="preferred_provider_id"
+                render={({ field }) => (
+                  <FormItem className="rounded-lg border p-4 space-y-2">
+                    <div className="space-y-0.5">
+                      <FormLabel>{t('form.preferred_provider_label')}</FormLabel>
+                      <p className="text-muted-foreground text-xs">{t('form.preferred_provider_hint')}</p>
+                    </div>
+                    <Select
+                      value={field.value ? String(field.value) : "none"}
+                      onValueChange={(v) => field.onChange(v === "none" ? null : Number(v))}
+                    >
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue placeholder={t('form.preferred_provider_placeholder')} />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value="none">{t('form.preferred_provider_none')}</SelectItem>
+                        {providers.map((p) => (
+                          <SelectItem key={p.ID} value={String(p.ID)}>
+                            {p.Name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </FormItem>
                 )}
               />

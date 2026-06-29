@@ -116,6 +116,7 @@ func checkAuthKey(c *gin.Context, key string, adminToken string) {
 	ctx = context.WithValue(ctx, consts.ContextKeyAuthKeyID, authKey.ID)
 	ctx = context.WithValue(ctx, consts.ContextKeyAuthKeyIOLog, lo.FromPtrOr(authKey.IOLog, false))
 	ctx = context.WithValue(ctx, consts.ContextKeyAuthKeyDebug, lo.FromPtrOr(authKey.Debug, false))
+	ctx = context.WithValue(ctx, consts.ContextKeyAuthKeyPreferredProvider, lo.FromPtrOr(authKey.PreferredProviderID, uint(0)))
 
 	allowAll := lo.FromPtrOr(authKey.AllowAll, false)
 	ctx = context.WithValue(ctx, consts.ContextKeyAllowAllModel, allowAll)

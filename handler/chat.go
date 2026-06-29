@@ -11,11 +11,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gin-gonic/gin"
 	"llmio/common"
 	"llmio/consts"
 	"llmio/models"
 	"llmio/service"
-	"github.com/gin-gonic/gin"
 )
 
 // flushWriter 包装 http.ResponseWriter，在每次 Write 后自动 Flush
@@ -98,8 +98,9 @@ func chatHandler(c *gin.Context, preProcessor service.Beforer, postProcessor ser
 		common.ErrorWithHttpStatus(c, http.StatusForbidden, http.StatusForbidden, fmt.Sprintf("auth key has no permission to use %s", before.Model))
 		return
 	}
-	// 按模型获取可用 provider
-	providersWithMeta, err := service.ProvidersWithMetaBymodelsName(ctx, style, *before)
+	// 按模型获取可用 provider（带 AuthKey 级别优先级覆盖）
+	authKeyIDForProvider, _ := ctx.Value(consts.ContextKeyAuthKeyID).(uint)
+	providersWithMeta, err := service.ProvidersWithMetaBymodelsName(ctx, style, *before, authKeyIDForProvider)
 	if err != nil {
 		common.InternalServerError(c, err.Error())
 		return

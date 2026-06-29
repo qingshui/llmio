@@ -11,14 +11,14 @@ import (
 	"strings"
 	"time"
 
+	"github.com/samber/lo"
+	"github.com/tidwall/sjson"
+	"gorm.io/gorm"
 	"llmio/balancers"
 	"llmio/consts"
 	"llmio/models"
 	"llmio/pkg/token"
 	"llmio/providers"
-	"github.com/samber/lo"
-	"github.com/tidwall/sjson"
-	"gorm.io/gorm"
 )
 
 func BalanceChat(ctx context.Context, start time.Time, style string, before Before, providersWithMeta ProvidersWithMeta, reqMeta models.ReqMeta) (*http.Response, *models.ChatLog, error) {
@@ -34,7 +34,12 @@ func BalanceChat(ctx context.Context, start time.Time, style string, before Befo
 
 	// 选择负载均衡策略
 	var balancer balancers.Balancer
-	switch providersWithMeta.Strategy {
+	// AuthKey 配了首选 Provider 时，强制走 priority 策略以实现"首选优先，失败降级"。
+	strategy := providersWithMeta.Strategy
+	if preferredProviderID, _ := ctx.Value(consts.ContextKeyAuthKeyPreferredProvider).(uint); preferredProviderID != 0 {
+		strategy = consts.BalancerPriority
+	}
+	switch strategy {
 	case consts.BalancerLottery:
 		balancer = balancers.NewLottery(providersWithMeta.WeightItems)
 	case consts.BalancerRotor:
@@ -318,7 +323,7 @@ type ProvidersWithMeta struct {
 	StickyTTL            int
 }
 
-func ProvidersWithMetaBymodelsName(ctx context.Context, style string, before Before) (*ProvidersWithMeta, error) {
+func ProvidersWithMetaBymodelsName(ctx context.Context, style string, before Before, authKeyID uint) (*ProvidersWithMeta, error) {
 	model, err := gorm.G[models.Model](models.DB).Where("name = ?", before.Model).First(ctx)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -388,12 +393,17 @@ func ProvidersWithMetaBymodelsName(ctx context.Context, style string, before Bef
 
 	weightItems := make(map[uint]int)
 	priorityItems := make(map[uint]int)
+	preferredProviderID, _ := ctx.Value(consts.ContextKeyAuthKeyPreferredProvider).(uint)
 	for _, mp := range modelWithProviders {
 		if _, ok := providerMap[mp.ProviderID]; !ok {
 			continue
 		}
 		weightItems[mp.ID] = mp.Weight
-		priorityItems[mp.ID] = mp.Priority
+		pr := mp.Priority
+		if preferredProviderID != 0 && mp.ProviderID == preferredProviderID {
+			pr = 1 << 30
+		}
+		priorityItems[mp.ID] = pr
 	}
 
 	return &ProvidersWithMeta{

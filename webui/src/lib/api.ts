@@ -63,6 +63,7 @@ export interface AuthKey {
   Status: boolean;
   IOLog: boolean;
   Debug: boolean;
+  PreferredProviderID: number | null;
   AllowAll: boolean;
   Models: string[] | null;
   ExpiresAt: string | null;
@@ -258,6 +259,7 @@ export type AuthKeyPayload = {
   status: boolean;
   io_log: boolean;
   debug: boolean;
+  preferred_provider_id: number | null;
   allow_all: boolean;
   models: string[];
   expires_at?: string | null;
