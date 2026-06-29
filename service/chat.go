@@ -34,31 +34,34 @@ func BalanceChat(ctx context.Context, start time.Time, style string, before Befo
 
 	// 选择负载均衡策略
 	var balancer balancers.Balancer
-	// AuthKey 配了首选 Provider 时，强制走 priority 策略以实现"首选优先，失败降级"。
-	strategy := providersWithMeta.Strategy
-	if preferredProviderID, _ := ctx.Value(consts.ContextKeyAuthKeyPreferredProvider).(uint); preferredProviderID != 0 {
-		strategy = consts.BalancerPriority
-	}
-	switch strategy {
-	case consts.BalancerLottery:
-		balancer = balancers.NewLottery(providersWithMeta.WeightItems)
-	case consts.BalancerRotor:
-		balancer = balancers.NewRotor(providersWithMeta.WeightItems)
-	case consts.BalancerPriority:
+	// AuthKey 配了首选 Provider 时，每次请求都走 Priority（preferred 优先，失败降级到其它），
+	// 不再叠加 sticky / breaker：sticky 会把降级后的备用 provider 粘住导致 preferred 不再被尝试，
+	// breaker 在 preferred 偶发失败时会把它排除。preferred 是强约束，应每次重新选。
+	preferredProviderID, _ := ctx.Value(consts.ContextKeyAuthKeyPreferredProvider).(uint)
+	if preferredProviderID != 0 {
 		balancer = balancers.NewPriority(providersWithMeta.WeightItems, providersWithMeta.PriorityItems)
-	default:
-		balancer = balancers.NewLottery(providersWithMeta.WeightItems)
-	}
+	} else {
+		switch providersWithMeta.Strategy {
+		case consts.BalancerLottery:
+			balancer = balancers.NewLottery(providersWithMeta.WeightItems)
+		case consts.BalancerRotor:
+			balancer = balancers.NewRotor(providersWithMeta.WeightItems)
+		case consts.BalancerPriority:
+			balancer = balancers.NewPriority(providersWithMeta.WeightItems, providersWithMeta.PriorityItems)
+		default:
+			balancer = balancers.NewLottery(providersWithMeta.WeightItems)
+		}
 
-	// 是否开启熔断
-	if providersWithMeta.Breaker {
-		balancer = balancers.BalancerWrapperBreaker(balancer)
-	}
+		// 是否开启熔断
+		if providersWithMeta.Breaker {
+			balancer = balancers.BalancerWrapperBreaker(balancer)
+		}
 
-	// 是否开启 IP 亲和性（最外层，breaker 之外）
-	if providersWithMeta.Sticky && reqMeta.RemoteIP != "" {
-		ttl := time.Duration(providersWithMeta.StickyTTL) * time.Second
-		balancer = balancers.NewSticky(balancer, before.Model, reqMeta.RemoteIP, ttl)
+		// 是否开启 IP 亲和性（最外层，breaker 之外）
+		if providersWithMeta.Sticky && reqMeta.RemoteIP != "" {
+			ttl := time.Duration(providersWithMeta.StickyTTL) * time.Second
+			balancer = balancers.NewSticky(balancer, before.Model, reqMeta.RemoteIP, ttl)
+		}
 	}
 
 	// 设置请求超时
