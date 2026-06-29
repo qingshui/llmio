@@ -209,7 +209,7 @@ func UpdateAuthKey(c *gin.Context) {
 	if trimmedKey := strings.TrimSpace(req.Key); trimmedKey != "" {
 		// 校验 key 不与其它密钥重复
 		count, err := gorm.G[models.AuthKey](models.DB).
-			Where("key = ? AND id <> ?", trimmedKey, id).
+			Where(&models.AuthKey{Key: trimmedKey}).Where("id <> ?", id).
 			Count(ctx, "id")
 		if err != nil {
 			common.InternalServerError(c, "Database error: "+err.Error())
@@ -235,7 +235,7 @@ func UpdateAuthKey(c *gin.Context) {
 	}
 
 	if update.Key != "" {
-		if _, err := gorm.G[models.AuthKey](models.DB).Where("id = ?", id).Update(ctx, "key", update.Key); err != nil {
+		if _, err := gorm.G[models.AuthKey](models.DB).Where("id = ?", id).Updates(ctx, models.AuthKey{Key: update.Key}); err != nil {
 			common.InternalServerError(c, "Failed to update key: "+err.Error())
 			return
 		}
