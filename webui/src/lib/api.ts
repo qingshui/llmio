@@ -62,6 +62,7 @@ export interface AuthKey {
   Key: string;
   Status: boolean;
   IOLog: boolean;
+  Debug: boolean;
   AllowAll: boolean;
   Models: string[] | null;
   ExpiresAt: string | null;
@@ -256,6 +257,7 @@ export type AuthKeyPayload = {
   key?: string;
   status: boolean;
   io_log: boolean;
+  debug: boolean;
   allow_all: boolean;
   models: string[];
   expires_at?: string | null;

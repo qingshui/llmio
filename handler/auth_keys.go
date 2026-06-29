@@ -20,6 +20,7 @@ type AuthKeyRequest struct {
 	Key       string   `json:"key"`
 	Status    *bool    `json:"status"`
 	IOLog     *bool    `json:"io_log"`
+	Debug     *bool    `json:"debug"`
 	AllowAll  *bool    `json:"allow_all"`
 	Models    []string `json:"models"`
 	ExpiresAt *string  `json:"expires_at"`
@@ -117,12 +118,17 @@ func CreateAuthKey(c *gin.Context) {
 	if req.IOLog != nil {
 		ioLog = *req.IOLog
 	}
+	debug := false
+	if req.Debug != nil {
+		debug = *req.Debug
+	}
 
 	authKey := models.AuthKey{
 		Name:      req.Name,
 		Key:       fmt.Sprintf("%s%s", consts.KeyPrefix, key),
 		Status:    req.Status,
 		IOLog:     new(ioLog),
+		Debug:     new(debug),
 		AllowAll:  req.AllowAll,
 		Models:    sanitizeModels(req.Models),
 		ExpiresAt: expiresAt,
@@ -180,11 +186,16 @@ func UpdateAuthKey(c *gin.Context) {
 	if req.IOLog != nil {
 		ioLog = *req.IOLog
 	}
+	debug := false
+	if req.Debug != nil {
+		debug = *req.Debug
+	}
 
 	update := models.AuthKey{
 		Name:      req.Name,
 		Status:    req.Status,
 		IOLog:     new(ioLog),
+		Debug:     new(debug),
 		AllowAll:  req.AllowAll,
 		Models:    sanitizeModels(req.Models),
 		ExpiresAt: expiresAt,
@@ -215,7 +226,7 @@ func UpdateAuthKey(c *gin.Context) {
 		}
 	}
 
-	if _, err := gorm.G[models.AuthKey](models.DB).Where("id = ?", id).Updates(ctx, update); err != nil {
+	if _, err := gorm.G[models.AuthKey](models.DB).Where("id = ?", id).Select("name", "status", "io_log", "debug", "allow_all", "models", "expires_at").Updates(ctx, update); err != nil {
 		common.InternalServerError(c, "Failed to update auth key: "+err.Error())
 		return
 	}

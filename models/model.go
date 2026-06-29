@@ -127,6 +127,7 @@ type AuthKey struct {
 	Key        string
 	Status     *bool      // 是否启用
 	IOLog      *bool      // 是否记录IO
+	Debug      *bool      // 是否记录DEBUG日志(完整请求/响应)
 	AllowAll   *bool      // 是否允许所有模型
 	Models     []string   `gorm:"serializer:json"` // 允许的模型列表
 	ExpiresAt  *time.Time // nil=永不过期，有值=具体过期时间

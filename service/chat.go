@@ -142,6 +142,13 @@ func BalanceChat(ctx context.Context, start time.Time, style string, before Befo
 				continue
 			}
 
+			if dbgReqBody, rerr := io.ReadAll(req.Body); rerr == nil {
+				debugLogRequest(ctx, req.Method, req.URL.String(), req.Header, dbgReqBody)
+				req.Body = io.NopCloser(bytes.NewReader(dbgReqBody))
+			} else {
+				req.Body = io.NopCloser(bytes.NewReader(nil))
+			}
+
 			res, err := client.Do(req)
 			if err != nil {
 				retryLog <- log.WithError(err)
@@ -156,6 +163,7 @@ func BalanceChat(ctx context.Context, start time.Time, style string, before Befo
 					slog.Error("read body error", "error", err)
 				}
 				retryLog <- log.WithError(fmt.Errorf("status: %d, body: %s", res.StatusCode, string(byteBody)))
+				debugLogResponseBytes(ctx, res.StatusCode, res.Header, byteBody)
 
 				if res.StatusCode == http.StatusTooManyRequests {
 					// 达到RPM限制 降低权重
@@ -190,6 +198,8 @@ func BalanceChat(ctx context.Context, start time.Time, style string, before Befo
 					res.Body = io.NopCloser(bytes.NewReader(byteBody))
 				}
 			}
+
+			debugLogResponse(ctx, res)
 
 			balancer.Success(id)
 

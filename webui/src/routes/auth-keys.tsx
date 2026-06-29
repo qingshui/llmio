@@ -76,6 +76,7 @@ const formSchema = z.object({
   key: z.string().optional(),
   status: z.boolean(),
   io_log: z.boolean(),
+  debug: z.boolean(),
   allow_all: z.boolean(),
   models: z.array(z.string()),
   expires_at: z.string().nullable().optional(),
@@ -89,6 +90,7 @@ const defaultFormValues: AuthKeyFormValues = {
   name: "",
   status: true,
   io_log: false,
+  debug: false,
   allow_all: true,
   models: [],
   expires_at: null,
@@ -226,6 +228,7 @@ export default function AuthKeysPage() {
       key: "",
       status: key.Status,
       io_log: key.IOLog,
+      debug: key.Debug,
       allow_all: key.AllowAll,
       models: key.Models ?? [],
       expires_at: key.ExpiresAt,
@@ -251,6 +254,7 @@ export default function AuthKeysPage() {
         key: values.key?.trim() || undefined,
         status: values.status,
         io_log: values.io_log,
+        debug: values.debug,
         allow_all: values.allow_all,
         models: values.allow_all ? [] : values.models,
         expires_at: values.expires_at ?? undefined,
@@ -408,6 +412,7 @@ export default function AuthKeysPage() {
                           <TableHead className="min-w-64">{t('table.key')}</TableHead>
                           <TableHead>{t('table.scope')}</TableHead>
                           <TableHead>{t('table.io_log')}</TableHead>
+                          <TableHead>{t('table.debug')}</TableHead>
                           <TableHead>{t('table.expires_at')}</TableHead>
                           <TableHead>{t('table.usage_count')}</TableHead>
                           <TableHead>{t('table.last_used')}</TableHead>
@@ -470,6 +475,11 @@ export default function AuthKeysPage() {
                             <TableCell>
                               <Badge variant={item.IOLog ? "default" : "outline"}>
                                 {item.IOLog ? t('table.io_log_on') : t('table.io_log_off')}
+                              </Badge>
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant={item.Debug ? "default" : "outline"}>
+                                {item.Debug ? t('table.debug_on') : t('table.debug_off')}
                               </Badge>
                             </TableCell>
                             <TableCell>
@@ -577,6 +587,10 @@ export default function AuthKeysPage() {
                         <MobileInfoItem
                           label={t('mobile.io_log')}
                           value={<Badge variant={item.IOLog ? "default" : "outline"}>{item.IOLog ? t('table.io_log_on') : t('table.io_log_off')}</Badge>}
+                        />
+                        <MobileInfoItem
+                          label={t('mobile.debug')}
+                          value={<Badge variant={item.Debug ? "default" : "outline"}>{item.Debug ? t('table.debug_on') : t('table.debug_off')}</Badge>}
                         />
                         <MobileInfoItem
                           label={t('mobile.expires_at')}
@@ -740,6 +754,22 @@ export default function AuthKeysPage() {
                   <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
                     <div className="space-y-0.5">
                       <FormLabel>{t('form.io_log_label')}</FormLabel>
+                    </div>
+                    <FormControl>
+                      <Switch checked={field.value} onCheckedChange={field.onChange} />
+                    </FormControl>
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="debug"
+                render={({ field }) => (
+                  <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
+                    <div className="space-y-0.5">
+                      <FormLabel>{t('form.debug_label')}</FormLabel>
+                      <p className="text-muted-foreground text-xs">{t('form.debug_hint')}</p>
                     </div>
                     <FormControl>
                       <Switch checked={field.value} onCheckedChange={field.onChange} />
