@@ -16,8 +16,9 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
-	"github.com/atopos31/llmio/consts"
+	"llmio/consts"
 	"log/slog"
 )
 
@@ -26,8 +27,6 @@ func debugEnabled(ctx context.Context) bool {
 	v, _ := ctx.Value(consts.ContextKeyAuthKeyDebug).(bool)
 	return v
 }
-
-
 
 // debugLogRequest dumps the outgoing upstream request. body is the final
 // request body (after all rewrites), so the log reflects exactly what is sent.
@@ -141,4 +140,91 @@ func debugLogResponseBytes(ctx context.Context, status int, header http.Header, 
 		"headers", hdr,
 		"body", string(body),
 	)
+}
+
+// ---------------------------------------------------------------------------
+// Streaming response chunk recording
+//
+// For stream responses (text/event-stream) the body cannot be read up-front
+// without breaking SSE forwarding. Instead we tap into the stream that is
+// already TeeReadered for RecordLog, and emit one [DEBUG STREAM] log line per
+// SSE event (events are separated by a blank line "\n\n"). Each line carries:
+//   logId      - request id (the ChatLog.ID), so all chunks of one request group together
+//   chunk      - 1-based event index
+//   elapsed_ms - milliseconds since the request started
+//   bytes      - event payload size in bytes
+//   event      - full event payload (no truncation)
+//
+// debugStreamRecorder wraps an io.Reader; callers Read from it as normal and
+// each completed SSE event is logged. The final partial chunk (if any) is
+// flushed on EOF.
+
+// debugStreamRecorder logs SSE events as they flow through a TeeReader.
+type debugStreamRecorder struct {
+	r     io.Reader
+	logId uint
+	start time.Time
+	buf   []byte
+	chunk int
+}
+
+func newDebugStreamRecorder(r io.Reader, logId uint, start time.Time) *debugStreamRecorder {
+	return &debugStreamRecorder{r: r, logId: logId, start: start}
+}
+
+func (d *debugStreamRecorder) Read(p []byte) (int, error) {
+	n, err := d.r.Read(p)
+	if n > 0 {
+		d.buf = append(d.buf, p[:n]...)
+		// SSE events are separated by a blank line. Emit each complete event.
+		for {
+			// look for "\n\n" event boundary
+			idx := indexDoubleNL(d.buf)
+			if idx < 0 {
+				break
+			}
+			event := d.buf[:idx+2]
+			d.buf = d.buf[idx+2:]
+			d.chunk++
+			d.emit(event)
+		}
+	}
+	if err != nil {
+		// flush trailing partial event (no terminating blank line)
+		if len(d.buf) > 0 {
+			d.chunk++
+			d.emit(d.buf)
+			d.buf = nil
+		}
+		debugStreamEnd(d.logId, d.chunk, d.start)
+	}
+	return n, err
+}
+
+func (d *debugStreamRecorder) emit(event []byte) {
+	slog.Info("[DEBUG STREAM]",
+		"logId", d.logId,
+		"chunk", d.chunk,
+		"elapsed_ms", time.Since(d.start).Milliseconds(),
+		"bytes", len(event),
+		"event", string(event),
+	)
+}
+
+func debugStreamEnd(logId uint, chunks int, start time.Time) {
+	slog.Info("[DEBUG STREAM END]",
+		"logId", logId,
+		"chunks", chunks,
+		"total_ms", time.Since(start).Milliseconds(),
+	)
+}
+
+// indexDoubleNL returns the index of the first "\n\n" in b, or -1 if absent.
+func indexDoubleNL(b []byte) int {
+	for i := 0; i+1 < len(b); i++ {
+		if b[i] == '\n' && b[i+1] == '\n' {
+			return i
+		}
+	}
+	return -1
 }

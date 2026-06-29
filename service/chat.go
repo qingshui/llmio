@@ -11,11 +11,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/atopos31/llmio/balancers"
-	"github.com/atopos31/llmio/consts"
-	"github.com/atopos31/llmio/models"
-	"github.com/atopos31/llmio/pkg/token"
-	"github.com/atopos31/llmio/providers"
+	"llmio/balancers"
+	"llmio/consts"
+	"llmio/models"
+	"llmio/pkg/token"
+	"llmio/providers"
 	"github.com/samber/lo"
 	"github.com/tidwall/sjson"
 	"gorm.io/gorm"
@@ -237,7 +237,7 @@ func RecordRetryLog(ctx context.Context, retryLog chan models.ChatLog) {
 	}
 }
 
-func RecordLog(ctx context.Context, reqStart time.Time, reader io.ReadCloser, processer Processer, logId uint, before Before, ioLog bool) {
+func RecordLog(ctx context.Context, reqStart time.Time, reader io.ReadCloser, processer Processer, logId uint, before Before, ioLog bool, debug bool) {
 	recordFunc := func() error {
 		defer reader.Close()
 		if ioLog {
@@ -248,7 +248,11 @@ func RecordLog(ctx context.Context, reqStart time.Time, reader io.ReadCloser, pr
 				return err
 			}
 		}
-		log, output, err := processer(ctx, reader, before.Stream, reqStart)
+		var procReader io.Reader = reader
+		if debug && before.Stream {
+			procReader = newDebugStreamRecorder(reader, logId, reqStart)
+		}
+		log, output, err := processer(ctx, procReader, before.Stream, reqStart)
 		if err != nil {
 			return err
 		}

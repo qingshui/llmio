@@ -11,10 +11,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/atopos31/llmio/common"
-	"github.com/atopos31/llmio/consts"
-	"github.com/atopos31/llmio/models"
-	"github.com/atopos31/llmio/service"
+	"llmio/common"
+	"llmio/consts"
+	"llmio/models"
+	"llmio/service"
 	"github.com/gin-gonic/gin"
 )
 
@@ -128,8 +128,9 @@ func chatHandler(c *gin.Context, preProcessor service.Beforer, postProcessor ser
 	tee := io.TeeReader(res.Body, pw)
 	// 异步处理输出并记录 tokens
 	authKeyIOLog, _ := ctx.Value(consts.ContextKeyAuthKeyIOLog).(bool)
+	authKeyDebug, _ := ctx.Value(consts.ContextKeyAuthKeyDebug).(bool)
 	slog.Info("start recording log", "logId", logId, "authKeyIOLog", authKeyIOLog)
-	go service.RecordLog(context.Background(), startReq, pr, postProcessor, logId, *before, authKeyIOLog)
+	go service.RecordLog(context.Background(), startReq, pr, postProcessor, logId, *before, authKeyIOLog, authKeyDebug)
 	writeHeader(c, before.Stream, res.Header)
 
 	// 流式响应使用 flushWriter 确保数据实时发送
