@@ -64,7 +64,7 @@ def parse_slog(line):
             out['body_ok'] = True
         except Exception as e:
             out['body_ok'] = False
-            out['body_raw'] = raw[:2000]
+            out['body_raw'] = raw
             out['body_err'] = str(e)
     return out
 
@@ -93,18 +93,18 @@ def fmt_req(req, idx):
             role = msg.get('role')
             content = msg.get('content')
             if isinstance(content, str):
-                preview = content[:200].replace('\n', ' ')
+                preview = content
                 L.append(f"    [{i}] role={role}")
-                L.append(f"         content(str): {preview}...")
+                L.append(f"         content(str): {preview}")
             elif isinstance(content, list):
                 types = [b.get('type','?') for b in content]
                 L.append(f"    [{i}] role={role}")
                 L.append(f"         content({len(content)} blocks, types={types})")
-                for j, blk in enumerate(content[:2]):
+                for j, blk in enumerate(content):
                     t = blk.get('type')
                     if t == 'text':
-                        txt = blk.get('text','')[:300].replace('\n',' ')
-                        L.append(f"           block[{j}] text: {txt}...")
+                        txt = blk.get('text','').replace('\n',' ')
+                        L.append(f"           block[{j}] text: {txt}")
                     elif t == 'tool_use':
                         L.append(f"           block[{j}] tool_use: name={blk.get('name')} id={blk.get('id')}")
                     elif t == 'tool_result':
@@ -115,12 +115,12 @@ def fmt_req(req, idx):
             sysv = body['system']
             if isinstance(sysv, list):
                 L.append(f"  system     : {len(sysv)} 个 block (normalizeRoles 提取)")
-                for j, s in enumerate(sysv[:2]):
+                for j, s in enumerate(sysv):
                     if isinstance(s, dict):
-                        txt = s.get('text','')[:150].replace('\n',' ')
-                        L.append(f"    system[{j}] type={s.get('type')} text={txt}...")
+                        txt = s.get('text','').replace('\n',' ')
+                        L.append(f"    system[{j}] type={s.get('type')} text={txt}")
             else:
-                L.append(f"  system     : {str(sysv)[:200]}...")
+                L.append(f"  system     : {str(sysv)}")
         other_keys = [k for k in body.keys() if k not in ('model','max_tokens','stream','messages','system')]
         if other_keys:
             L.append(f"  其他字段  : {other_keys}")
@@ -157,14 +157,14 @@ def fmt_resp(resp, idx):
             L.append(f"  stop_reason : {body.get('stop_reason')}")
             content = body.get('content', [])
             L.append(f"  content     : {len(content)} 个 block")
-            for i, blk in enumerate(content[:3]):
+            for i, blk in enumerate(content):
                 t = blk.get('type')
                 if t == 'text':
-                    txt = blk.get('text','')[:300].replace('\n',' ')
-                    L.append(f"    [{i}] text: {txt}...")
+                    txt = blk.get('text','').replace('\n',' ')
+                    L.append(f"    [{i}] text: {txt}")
                 elif t == 'thinking':
-                    txt = blk.get('thinking','')[:300].replace('\n',' ')
-                    L.append(f"    [{i}] thinking: {txt}...")
+                    txt = blk.get('thinking','').replace('\n',' ')
+                    L.append(f"    [{i}] thinking: {txt}")
                 else:
                     L.append(f"    [{i}] {t}")
             usage = body.get('usage', {})
