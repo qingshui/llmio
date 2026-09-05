@@ -58,18 +58,22 @@ type ModelWithProvider struct {
 }
 
 type ChatLog struct {
-	gorm.Model
-	Name          string `gorm:"index"`
-	TraceID       string `gorm:"index"`
-	ProviderModel string `gorm:"index"`
-	ProviderName  string `gorm:"index"`
-	Status        string `gorm:"index"` // error or success
-	Style         string // 类型
-	UserAgent     string `gorm:"index"` // 用户代理
-	RemoteIP      string // 访问ip
-	AuthKeyID     uint   `gorm:"index"` // 使用的AuthKey ID
-	SessionID     string `gorm:"index"` // 请求体中的session_id
-	ChatIO        bool   // 是否开启IO记录
+	ID        uint      `gorm:"primarykey"`
+	CreatedAt time.Time `gorm:"index:idx_chat_logs_created_at_tokens,priority:1"`
+	UpdatedAt time.Time
+	// 覆盖索引 (created_at, deleted_at, total_tokens)：统计接口免回表；deleted_at 单列索引已废弃（优化器误选且仅 ~17 条软删除记录）
+	DeletedAt     gorm.DeletedAt `gorm:"index:idx_chat_logs_created_at_tokens,priority:2"`
+	Name          string         `gorm:"index"`
+	TraceID       string         `gorm:"index"`
+	ProviderModel string         `gorm:"index"`
+	ProviderName  string         `gorm:"index"`
+	Status        string         `gorm:"index"` // error or success
+	Style         string         // 类型
+	UserAgent     string         `gorm:"index"` // 用户代理
+	RemoteIP      string         // 访问ip
+	AuthKeyID     uint           `gorm:"index"` // 使用的AuthKey ID
+	SessionID     string         `gorm:"index"` // 请求体中的session_id
+	ChatIO        bool           // 是否开启IO记录
 
 	Error          string        // if status is error, this field will be set
 	Retry          int           // 重试次数
@@ -94,7 +98,7 @@ func (l ChatLog) WithError(err error) ChatLog {
 type Usage struct {
 	PromptTokens        int64               `json:"prompt_tokens"`
 	CompletionTokens    int64               `json:"completion_tokens"`
-	TotalTokens         int64               `json:"total_tokens"`
+	TotalTokens         int64               `json:"total_tokens" gorm:"index:idx_chat_logs_created_at_tokens,priority:3"`
 	PromptTokensDetails PromptTokensDetails `json:"prompt_tokens_details" gorm:"serializer:json"`
 }
 

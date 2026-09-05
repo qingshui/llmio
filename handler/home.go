@@ -1,10 +1,12 @@
 package handler
 
 import (
+	"context"
 	"database/sql"
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"llmio/common"
@@ -13,9 +15,49 @@ import (
 	"gorm.io/gorm"
 )
 
+// 首页统计涉及 chat_logs 全表/大范围扫描，60s 内复用计算结果
+const metricsCacheTTL = 60 * time.Second
+
+type metricsCacheItem struct {
+	value     any
+	expiresAt time.Time
+}
+
+var metricsCache sync.Map
+
+func cachedCompute[T any](key string, compute func() (T, error)) (T, error) {
+	if v, ok := metricsCache.Load(key); ok {
+		if item, ok := v.(metricsCacheItem); ok && time.Now().Before(item.expiresAt) {
+			if val, ok := item.value.(T); ok {
+				return val, nil
+			}
+		}
+	}
+	result, err := compute()
+	if err != nil {
+		return result, err
+	}
+	metricsCache.Store(key, metricsCacheItem{value: result, expiresAt: time.Now().Add(metricsCacheTTL)})
+	return result, nil
+}
+
 type MetricsRes struct {
 	Reqs   int64 `json:"reqs"`
 	Tokens int64 `json:"tokens"`
+}
+
+func computeMetrics(ctx context.Context, start time.Time) (MetricsRes, error) {
+	chain := gorm.G[models.ChatLog](models.DB).Where("created_at >= ?", start)
+
+	reqs, err := chain.Count(ctx, "id")
+	if err != nil {
+		return MetricsRes{}, err
+	}
+	var tokens sql.NullInt64
+	if err := chain.Select("sum(total_tokens) as tokens").Scan(ctx, &tokens); err != nil {
+		return MetricsRes{}, err
+	}
+	return MetricsRes{Reqs: reqs, Tokens: tokens.Int64}, nil
 }
 
 func Metrics(c *gin.Context) {
@@ -27,22 +69,16 @@ func Metrics(c *gin.Context) {
 
 	now := time.Now()
 	year, month, day := now.Date()
-	chain := gorm.G[models.ChatLog](models.DB).Where("created_at >= ?", time.Date(year, month, day, 0, 0, 0, 0, now.Location()).AddDate(0, 0, -days))
+	start := time.Date(year, month, day, 0, 0, 0, 0, now.Location()).AddDate(0, 0, -days)
 
-	reqs, err := chain.Count(c.Request.Context(), "id")
-	if err != nil {
-		common.InternalServerError(c, "Failed to count requests: "+err.Error())
-		return
-	}
-	var tokens sql.NullInt64
-	if err := chain.Select("sum(total_tokens) as tokens").Scan(c.Request.Context(), &tokens); err != nil {
-		common.InternalServerError(c, "Failed to sum tokens: "+err.Error())
-		return
-	}
-	common.Success(c, MetricsRes{
-		Reqs:   reqs,
-		Tokens: tokens.Int64,
+	res, err := cachedCompute("metrics:"+strconv.Itoa(days), func() (MetricsRes, error) {
+		return computeMetrics(c.Request.Context(), start)
 	})
+	if err != nil {
+		common.InternalServerError(c, "Failed to compute metrics: "+err.Error())
+		return
+	}
+	common.Success(c, res)
 }
 
 type Count struct {
@@ -51,29 +87,36 @@ type Count struct {
 }
 
 func Counts(c *gin.Context) {
-	results := make([]Count, 0)
-	if err := models.DB.
-		Model(&models.ChatLog{}).
-		Select("name as model, COUNT(*) as calls").
-		Group("name").
-		Order("calls DESC").
-		Scan(&results).Error; err != nil {
+	results, err := cachedCompute("counts", func() ([]Count, error) {
+		results := make([]Count, 0)
+		// Unscoped：去掉 deleted_at IS NULL，让 GROUP BY name 走索引松散扫描（口径包含软删除记录）
+		if err := models.DB.
+			Unscoped().
+			Model(&models.ChatLog{}).
+			Select("name as model, COUNT(*) as calls").
+			Group("name").
+			Order("calls DESC").
+			Scan(&results).Error; err != nil {
+			return nil, err
+		}
+
+		const topN = 5
+		if len(results) > topN {
+			var othersCalls int64
+			for _, item := range results[topN:] {
+				othersCalls += item.Calls
+			}
+			results = append(results[:topN], Count{
+				Model: "others",
+				Calls: othersCalls,
+			})
+		}
+		return results, nil
+	})
+	if err != nil {
 		common.InternalServerError(c, err.Error())
 		return
 	}
-	const topN = 5
-	if len(results) > topN {
-		var othersCalls int64
-		for _, item := range results[topN:] {
-			othersCalls += item.Calls
-		}
-		othersCount := Count{
-			Model: "others",
-			Calls: othersCalls,
-		}
-		results = append(results[:topN], othersCount)
-	}
-
 	common.Success(c, results)
 }
 
@@ -82,21 +125,22 @@ type ProjectCount struct {
 	Calls   int64  `json:"calls"`
 }
 
-func ProjectCounts(c *gin.Context) {
+func computeProjectCounts() ([]ProjectCount, error) {
 	type authKeyCount struct {
 		AuthKeyID uint  `gorm:"column:auth_key_id"`
 		Calls     int64 `gorm:"column:calls"`
 	}
 
 	rows := make([]authKeyCount, 0)
+	// Unscoped：去掉 deleted_at IS NULL，让 GROUP BY auth_key_id 走索引松散扫描（口径包含软删除记录）
 	if err := models.DB.
+		Unscoped().
 		Model(&models.ChatLog{}).
 		Select("auth_key_id, COUNT(*) as calls").
 		Group("auth_key_id").
 		Order("calls DESC").
 		Scan(&rows).Error; err != nil {
-		common.InternalServerError(c, err.Error())
-		return
+		return nil, err
 	}
 
 	ids := make([]uint, 0)
@@ -113,8 +157,7 @@ func ProjectCounts(c *gin.Context) {
 			Model(&models.AuthKey{}).
 			Where("id IN ?", ids).
 			Find(&keys).Error; err != nil {
-			common.InternalServerError(c, err.Error())
-			return
+			return nil, err
 		}
 	}
 
@@ -149,12 +192,21 @@ func ProjectCounts(c *gin.Context) {
 		for _, item := range results[topN:] {
 			othersCalls += item.Calls
 		}
-		othersCount := ProjectCount{
+		results = append(results[:topN], ProjectCount{
 			Project: "others",
 			Calls:   othersCalls,
-		}
-		results = append(results[:topN], othersCount)
+		})
 	}
+	return results, nil
+}
 
+func ProjectCounts(c *gin.Context) {
+	results, err := cachedCompute("projects", func() ([]ProjectCount, error) {
+		return computeProjectCounts()
+	})
+	if err != nil {
+		common.InternalServerError(c, err.Error())
+		return
+	}
 	common.Success(c, results)
 }
