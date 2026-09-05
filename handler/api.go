@@ -842,14 +842,17 @@ func GetRequestLogs(c *gin.Context) {
 		query = query.Where("id = ?", logID)
 	}
 
-	// 执行分页查询
+	// 统计总数走 Unscoped：去掉 deleted_at IS NULL 后才能纯用
+	// idx_chat_logs_auth_key_id_tokens 覆盖索引计数，否则大 key 会回表扫描上百万行。
+	// chat_logs 的删除均为硬删（log_cleanup / 手动清理），不存在软删除记录，口径不受影响。
+	var total int64
+	if err := query.Unscoped().Count(&total).Error; err != nil {
+		common.InternalServerError(c, "Failed to query logs: "+err.Error())
+		return
+	}
+
 	var logs []models.ChatLog
-	total, err := common.PaginateQuery(
-		query.Order("id DESC"),
-		params,
-		&logs,
-	)
-	if err != nil {
+	if err := common.ApplyPagination(query.Order("id DESC"), params).Find(&logs).Error; err != nil {
 		common.InternalServerError(c, "Failed to query logs: "+err.Error())
 		return
 	}
