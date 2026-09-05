@@ -59,11 +59,11 @@ type ModelWithProvider struct {
 
 type ChatLog struct {
 	ID        uint      `gorm:"primarykey"`
-	CreatedAt time.Time `gorm:"index:idx_chat_logs_created_at_tokens,priority:1"`
+	CreatedAt time.Time `gorm:"index:idx_chat_logs_created_at_tokens,priority:1;index:idx_chat_logs_range_stats,priority:1"`
 	UpdatedAt time.Time
 	// 覆盖索引 (created_at, deleted_at, total_tokens)：统计接口免回表；deleted_at 单列索引已废弃（优化器误选且仅 ~17 条软删除记录）
 	DeletedAt     gorm.DeletedAt `gorm:"index:idx_chat_logs_created_at_tokens,priority:2"`
-	Name          string         `gorm:"index"`
+	Name          string         `gorm:"index;index:idx_chat_logs_range_stats,priority:2"`
 	TraceID       string         `gorm:"index"`
 	ProviderModel string         `gorm:"index"`
 	ProviderName  string         `gorm:"index"`
@@ -71,8 +71,8 @@ type ChatLog struct {
 	Style         string         // 类型
 	UserAgent     string         `gorm:"index"` // 用户代理
 	RemoteIP      string         // 访问ip
-	AuthKeyID     uint           `gorm:"index"` // 使用的AuthKey ID
-	SessionID     string         `gorm:"index"` // 请求体中的session_id
+	AuthKeyID     uint           `gorm:"index:idx_chat_logs_auth_key_id_tokens,priority:1;index:idx_chat_logs_range_stats,priority:3"` // 使用的AuthKey ID
+	SessionID     string         `gorm:"index"`                                                                                        // 请求体中的session_id
 	ChatIO        bool           // 是否开启IO记录
 
 	Error          string        // if status is error, this field will be set
@@ -98,7 +98,7 @@ func (l ChatLog) WithError(err error) ChatLog {
 type Usage struct {
 	PromptTokens        int64               `json:"prompt_tokens"`
 	CompletionTokens    int64               `json:"completion_tokens"`
-	TotalTokens         int64               `json:"total_tokens" gorm:"index:idx_chat_logs_created_at_tokens,priority:3"`
+	TotalTokens         int64               `json:"total_tokens" gorm:"index:idx_chat_logs_created_at_tokens,priority:3;index:idx_chat_logs_auth_key_id_tokens,priority:2;index:idx_chat_logs_range_stats,priority:4"`
 	PromptTokensDetails PromptTokensDetails `json:"prompt_tokens_details" gorm:"serializer:json"`
 }
 

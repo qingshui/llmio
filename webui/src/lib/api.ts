@@ -412,21 +412,29 @@ export interface ModelCount {
   calls: number;
 }
 
+export type StatRange = 'today' | 'week' | 'month' | '30d' | 'all';
+
 export interface ProjectCount {
   project: string;
   calls: number;
+  tokens: number;
+}
+
+export interface ProjectMetrics {
+  calls: ProjectCount[];
+  tokens: ProjectCount[];
 }
 
 export async function getMetrics(days: number): Promise<MetricsData> {
   return apiRequest<MetricsData>(`/metrics/use/${days}`);
 }
 
-export async function getModelCounts(): Promise<ModelCount[]> {
-  return apiRequest<ModelCount[]>('/metrics/counts');
+export async function getModelCounts(range: StatRange): Promise<ModelCount[]> {
+  return apiRequest<ModelCount[]>(`/metrics/counts?range=${range}`);
 }
 
-export async function getProjectCounts(): Promise<ProjectCount[]> {
-  return apiRequest<ProjectCount[]>('/metrics/projects');
+export async function getProjectCounts(range: StatRange): Promise<ProjectMetrics> {
+  return apiRequest<ProjectMetrics>(`/metrics/projects?range=${range}`);
 }
 
 // Test API functions

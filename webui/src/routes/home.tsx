@@ -4,13 +4,14 @@ import { useState, useEffect, Suspense, lazy, memo, useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import Loading from "@/components/loading";
 import {
   getMetrics,
   getModelCounts,
   getProjectCounts
 } from "@/lib/api";
-import type { MetricsData, ModelCount, ProjectCount } from "@/lib/api";
+import type { MetricsData, ModelCount, ProjectMetrics, StatRange } from "@/lib/api";
 import { toast } from "sonner";
 import { RefreshCw } from "lucide-react";
 
@@ -79,7 +80,7 @@ export default function Home() {
   const [todayMetrics, setTodayMetrics] = useState<MetricsData>({ reqs: 0, tokens: 0 });
   const [totalMetrics, setTotalMetrics] = useState<MetricsData>({ reqs: 0, tokens: 0 });
   const [modelCounts, setModelCounts] = useState<ModelCount[]>([]);
-  const [projectCounts, setProjectCounts] = useState<ProjectCount[]>([]);
+  const [projectCounts, setProjectCounts] = useState<ProjectMetrics>({ calls: [], tokens: [] });
 
   const { t } = useTranslation('home');
 
@@ -105,9 +106,11 @@ export default function Home() {
     }
   }, [t]);
 
-  const fetchModelCounts = useCallback(async () => {
+  const [statRange, setStatRange] = useState<StatRange>('30d');
+
+  const fetchModelCounts = useCallback(async (range: StatRange) => {
     try {
-      const data = await getModelCounts();
+      const data = await getModelCounts(range);
       setModelCounts(data);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -116,9 +119,9 @@ export default function Home() {
     }
   }, [t]);
 
-  const fetchProjectCounts = useCallback(async () => {
+  const fetchProjectCounts = useCallback(async (range: StatRange) => {
     try {
-      const data = await getProjectCounts();
+      const data = await getProjectCounts(range);
       setProjectCounts(data);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -127,19 +130,29 @@ export default function Home() {
     }
   }, [t]);
 
+  const refreshCharts = useCallback(() => {
+    void fetchModelCounts(statRange);
+    void fetchProjectCounts(statRange);
+  }, [fetchModelCounts, fetchProjectCounts, statRange]);
+
   const load = useCallback(async () => {
     setLoading(true);
-    await Promise.all([fetchTodayMetrics(), fetchTotalMetrics(), fetchModelCounts(), fetchProjectCounts()]);
+    await Promise.all([fetchTodayMetrics(), fetchTotalMetrics()]);
     setLoading(false);
-  }, [fetchModelCounts, fetchProjectCounts, fetchTodayMetrics, fetchTotalMetrics]);
+  }, [fetchTodayMetrics, fetchTotalMetrics]);
 
   useEffect(() => {
     void load();
   }, [load]);
 
+  // 统计范围变化时只重拉排行/饼图数据
+  useEffect(() => {
+    refreshCharts();
+  }, [refreshCharts]);
+
   return (
     <div className="h-full min-h-0 flex flex-col gap-2 p-1">
-      <HomeHeader onRefresh={() => void load()} />
+      <HomeHeader onRefresh={() => { void load(); refreshCharts(); }} />
 
       <div className="flex-1 min-h-0 overflow-y-auto">
         {loading ? (
@@ -190,6 +203,22 @@ export default function Home() {
               </Card>
             </div>
 
+            <div className="flex items-center justify-end gap-2">
+              <span className="text-sm text-muted-foreground">统计范围</span>
+              <Select value={statRange} onValueChange={(value) => setStatRange(value as StatRange)}>
+                <SelectTrigger className="h-8 w-32">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="today">今天</SelectItem>
+                  <SelectItem value="week">本周</SelectItem>
+                  <SelectItem value="month">本月</SelectItem>
+                  <SelectItem value="30d">近30天</SelectItem>
+                  <SelectItem value="all">全部</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
               <Suspense fallback={<div className="h-64 flex items-center justify-center">
                 <Loading message={t('loading_chart')} />
@@ -200,7 +229,7 @@ export default function Home() {
               <Suspense fallback={<div className="h-64 flex items-center justify-center">
                 <Loading message={t('loading_chart')} />
               </div>}>
-                <ProjectChartPieDonutText data={projectCounts} />
+                <ProjectChartPieDonutText data={projectCounts.calls} />
               </Suspense>
             </div>
 
