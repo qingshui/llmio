@@ -3,8 +3,8 @@ package handler
 import (
 	"net/http"
 
-	"llmio/common"
 	"github.com/gin-gonic/gin"
+	"llmio/common"
 )
 
 type EventLoggingRequest struct {

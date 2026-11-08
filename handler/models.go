@@ -5,12 +5,12 @@ import (
 	"errors"
 	"slices"
 
+	"github.com/gin-gonic/gin"
 	"llmio/common"
 	"llmio/consts"
 	"llmio/models"
 	"llmio/providers"
 	"llmio/service"
-	"github.com/gin-gonic/gin"
 )
 
 func OpenAIModelsHandler(c *gin.Context) {

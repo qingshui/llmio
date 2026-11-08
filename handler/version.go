@@ -1,9 +1,9 @@
 package handler
 
 import (
+	"github.com/gin-gonic/gin"
 	"llmio/common"
 	"llmio/consts"
-	"github.com/gin-gonic/gin"
 )
 
 func GetVersion(c *gin.Context) {

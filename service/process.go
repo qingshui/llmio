@@ -11,8 +11,8 @@ import (
 	"sync"
 	"time"
 
-	"llmio/models"
 	"github.com/tidwall/gjson"
+	"llmio/models"
 )
 
 const (

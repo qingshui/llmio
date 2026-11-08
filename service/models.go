@@ -3,9 +3,9 @@ package service
 import (
 	"context"
 
-	"llmio/models"
 	"github.com/samber/lo"
 	"gorm.io/gorm"
+	"llmio/models"
 )
 
 func ModelsByTypes(ctx context.Context, modelTypes ...string) ([]models.Model, error) {
