@@ -52,7 +52,9 @@ import {
   ChevronLeft,
   ChevronRight,
   ChevronDownIcon,
-  Eye
+  Eye,
+  ArrowUp,
+  ArrowDown
 } from "lucide-react";
 import Loading from "@/components/loading";
 import { toast } from "sonner";
@@ -72,6 +74,7 @@ import {
   type Model
 } from "@/lib/api";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 const formSchema = z.object({
   name: z.string().min(1),
@@ -79,7 +82,7 @@ const formSchema = z.object({
   status: z.boolean(),
   io_log: z.boolean(),
   debug: z.boolean(),
-  preferred_provider_id: z.number().nullable().optional(),
+  provider_priorities: z.array(z.number()),
   allow_all: z.boolean(),
   models: z.array(z.string()),
   expires_at: z.string().nullable().optional(),
@@ -94,7 +97,7 @@ const defaultFormValues: AuthKeyFormValues = {
   status: true,
   io_log: false,
   debug: false,
-  preferred_provider_id: null,
+  provider_priorities: [],
   allow_all: true,
   models: [],
   expires_at: null,
@@ -114,6 +117,40 @@ const MobileInfoItem = ({ label, value, mono = false }: MobileInfoItemProps) => 
     </div>
   </div>
 );
+
+type ProviderPriorityBadgesProps = {
+  priorities: number[] | null;
+  providers: Provider[];
+};
+
+const ProviderPriorityBadges = ({ priorities, providers }: ProviderPriorityBadgesProps) => {
+  const list = priorities ?? [];
+  const nameOf = (id: number) => providers.find((p) => p.ID === id)?.Name ?? `#${id}`;
+  if (list.length === 0) {
+    return <span className="text-muted-foreground">-</span>;
+  }
+  return (
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <div className="flex flex-wrap items-center gap-1 cursor-default">
+            {list.slice(0, 2).map((id, index) => (
+              <Badge key={id} variant="outline">{index + 1}. {nameOf(id)}</Badge>
+            ))}
+            {list.length > 2 && <Badge variant="outline">+{list.length - 2}</Badge>}
+          </div>
+        </TooltipTrigger>
+        <TooltipContent>
+          <div className="space-y-0.5">
+            {list.map((id, index) => (
+              <div key={id}>{index + 1}. {nameOf(id)}</div>
+            ))}
+          </div>
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
+};
 
 
 export default function AuthKeysPage() {
@@ -244,7 +281,7 @@ export default function AuthKeysPage() {
       status: key.Status,
       io_log: key.IOLog,
       debug: key.Debug,
-      preferred_provider_id: key.PreferredProviderID ?? null,
+      provider_priorities: key.ProviderPriorities ?? [],
       allow_all: key.AllowAll,
       models: key.Models ?? [],
       expires_at: key.ExpiresAt,
@@ -271,7 +308,7 @@ export default function AuthKeysPage() {
         status: values.status,
         io_log: values.io_log,
         debug: values.debug,
-        preferred_provider_id: values.preferred_provider_id ?? null,
+        provider_priorities: values.provider_priorities ?? [],
         allow_all: values.allow_all,
         models: values.allow_all ? [] : values.models,
         expires_at: values.expires_at ?? undefined,
@@ -430,7 +467,7 @@ export default function AuthKeysPage() {
                           <TableHead>{t('table.scope')}</TableHead>
                           <TableHead>{t('table.io_log')}</TableHead>
                           <TableHead>{t('table.debug')}</TableHead>
-                          <TableHead>{t('table.preferred_provider')}</TableHead>
+                          <TableHead>{t('table.provider_priority')}</TableHead>
                           <TableHead>{t('table.expires_at')}</TableHead>
                           <TableHead>{t('table.usage_count')}</TableHead>
                           <TableHead>{t('table.last_used')}</TableHead>
@@ -501,9 +538,7 @@ export default function AuthKeysPage() {
                               </Badge>
                             </TableCell>
                             <TableCell>
-                              {item.PreferredProviderID
-                                ? (providers.find((p) => p.ID === item.PreferredProviderID)?.Name ?? `#${item.PreferredProviderID}`)
-                                : <span className="text-muted-foreground">-</span>}
+                              <ProviderPriorityBadges priorities={item.ProviderPriorities} providers={providers} />
                             </TableCell>
                             <TableCell>
                               <span className={cn(
@@ -616,10 +651,8 @@ export default function AuthKeysPage() {
                           value={<Badge variant={item.Debug ? "default" : "outline"}>{item.Debug ? t('table.debug_on') : t('table.debug_off')}</Badge>}
                         />
                         <MobileInfoItem
-                          label={t('mobile.preferred_provider')}
-                          value={item.PreferredProviderID
-                            ? (providers.find((p) => p.ID === item.PreferredProviderID)?.Name ?? `#${item.PreferredProviderID}`)
-                            : <span className="text-muted-foreground">-</span>}
+                          label={t('mobile.provider_priority')}
+                          value={<ProviderPriorityBadges priorities={item.ProviderPriorities} providers={providers} />}
                         />
                         <MobileInfoItem
                           label={t('mobile.expires_at')}
@@ -809,33 +842,87 @@ export default function AuthKeysPage() {
 
               <FormField
                 control={form.control}
-                name="preferred_provider_id"
-                render={({ field }) => (
-                  <FormItem className="rounded-lg border p-4 space-y-2">
-                    <div className="space-y-0.5">
-                      <FormLabel>{t('form.preferred_provider_label')}</FormLabel>
-                      <p className="text-muted-foreground text-xs">{t('form.preferred_provider_hint')}</p>
-                    </div>
-                    <Select
-                      value={field.value ? String(field.value) : "none"}
-                      onValueChange={(v) => field.onChange(v === "none" ? null : Number(v))}
-                    >
-                      <FormControl>
-                        <SelectTrigger>
-                          <SelectValue placeholder={t('form.preferred_provider_placeholder')} />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        <SelectItem value="none">{t('form.preferred_provider_none')}</SelectItem>
-                        {providers.map((p) => (
-                          <SelectItem key={p.ID} value={String(p.ID)}>
-                            {p.Name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </FormItem>
-                )}
+                name="provider_priorities"
+                render={({ field }) => {
+                  const list = field.value ?? [];
+                  const available = providers.filter((p) => !list.includes(p.ID));
+                  const nameOf = (id: number) => providers.find((p) => p.ID === id)?.Name ?? `#${id}`;
+                  const move = (index: number, direction: -1 | 1) => {
+                    const target = index + direction;
+                    if (target < 0 || target >= list.length) return;
+                    const next = [...list];
+                    [next[index], next[target]] = [next[target], next[index]];
+                    field.onChange(next);
+                  };
+                  return (
+                    <FormItem className="rounded-lg border p-4 space-y-2">
+                      <div className="space-y-0.5">
+                        <FormLabel>{t('form.provider_priority_label')}</FormLabel>
+                        <p className="text-muted-foreground text-xs">{t('form.provider_priority_hint')}</p>
+                      </div>
+                      {list.length === 0 ? (
+                        <p className="text-sm text-muted-foreground">{t('form.provider_priority_empty')}</p>
+                      ) : (
+                        <div className="space-y-2">
+                          {list.map((id, index) => (
+                            <div key={id} className="flex items-center gap-2 rounded-md border px-3 py-2">
+                              <span className="w-4 text-xs text-muted-foreground">{index + 1}</span>
+                              <span className="flex-1 truncate text-sm">{nameOf(id)}</span>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                className="size-7"
+                                disabled={index === 0}
+                                onClick={() => move(index, -1)}
+                                aria-label={t('aria.move_up')}
+                              >
+                                <ArrowUp className="size-4" />
+                              </Button>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                className="size-7"
+                                disabled={index === list.length - 1}
+                                onClick={() => move(index, 1)}
+                                aria-label={t('aria.move_down')}
+                              >
+                                <ArrowDown className="size-4" />
+                              </Button>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                className="size-7 text-destructive"
+                                onClick={() => field.onChange(list.filter((_, i) => i !== index))}
+                                aria-label={t('aria.remove_provider')}
+                              >
+                                <Trash2 className="size-4" />
+                              </Button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      {available.length > 0 ? (
+                        <Select value="" onValueChange={(v) => field.onChange([...list, Number(v)])}>
+                          <SelectTrigger className="h-9">
+                            <SelectValue placeholder={t('form.provider_priority_add')} />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {available.map((p) => (
+                              <SelectItem key={p.ID} value={String(p.ID)}>
+                                {p.Name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      ) : list.length > 0 && (
+                        <p className="text-xs text-muted-foreground">{t('form.provider_priority_all_added')}</p>
+                      )}
+                    </FormItem>
+                  );
+                }}
               />
 
               <FormField

@@ -6,11 +6,11 @@ import (
 	"testing"
 	"time"
 
-	"llmio/consts"
-	"llmio/models"
 	"github.com/gin-gonic/gin"
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
+	"llmio/consts"
+	"llmio/models"
 )
 
 // setupTestDB creates a temporary test database
@@ -470,4 +470,81 @@ func TestCheckAuthKey_NilExpiry(t *testing.T) {
 	}
 
 	t.Log("✓ Nil expiry (never expires) key is accepted")
+}
+
+func TestCheckAuthKey_InjectsProviderPriorities(t *testing.T) {
+	_, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	r := httptest.NewRecorder()
+	gin.SetMode(gin.TestMode)
+	c, _ := gin.CreateTestContext(r)
+	c.Request = httptest.NewRequest("POST", "/", nil)
+
+	authKey := models.AuthKey{
+		Name:               "With Priorities",
+		Key:                "key-with-priorities",
+		Status:             new(true),
+		AllowAll:           new(true),
+		ProviderPriorities: []uint{3, 1},
+	}
+	if err := models.DB.Create(&authKey).Error; err != nil {
+		t.Fatalf("failed to create test auth key: %v", err)
+	}
+
+	checkAuthKey(c, "key-with-priorities", "admin-token")
+
+	ctx := c.Request.Context()
+	priorities, ok := ctx.Value(consts.ContextKeyAuthKeyProviderPriorities).([]uint)
+	if !ok {
+		t.Fatal("expected ContextKeyAuthKeyProviderPriorities to be []uint")
+	}
+	if len(priorities) != 2 || priorities[0] != 3 || priorities[1] != 1 {
+		t.Errorf("expected [3,1], got %v", priorities)
+	}
+}
+
+func TestCheckAuthKey_NilProviderPriorities(t *testing.T) {
+	_, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	r := httptest.NewRecorder()
+	gin.SetMode(gin.TestMode)
+	c, _ := gin.CreateTestContext(r)
+	c.Request = httptest.NewRequest("POST", "/", nil)
+
+	authKey := models.AuthKey{
+		Name:     "Without Priorities",
+		Key:      "key-without-priorities",
+		Status:   new(true),
+		AllowAll: new(true),
+	}
+	if err := models.DB.Create(&authKey).Error; err != nil {
+		t.Fatalf("failed to create test auth key: %v", err)
+	}
+
+	checkAuthKey(c, "key-without-priorities", "admin-token")
+
+	ctx := c.Request.Context()
+	priorities, ok := ctx.Value(consts.ContextKeyAuthKeyProviderPriorities).([]uint)
+	if !ok || priorities != nil {
+		t.Errorf("expected nil slice for key without priorities, got %v (ok=%v)", priorities, ok)
+	}
+}
+
+func TestCheckAuthKey_AdminTokenHasNoProviderPriorities(t *testing.T) {
+	_, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	r := httptest.NewRecorder()
+	gin.SetMode(gin.TestMode)
+	c, _ := gin.CreateTestContext(r)
+	c.Request = httptest.NewRequest("POST", "/", nil)
+
+	checkAuthKey(c, "admin-token", "admin-token")
+
+	ctx := c.Request.Context()
+	if ctx.Value(consts.ContextKeyAuthKeyProviderPriorities) != nil {
+		t.Error("expected no provider priorities for admin token")
+	}
 }

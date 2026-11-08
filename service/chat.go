@@ -34,11 +34,12 @@ func BalanceChat(ctx context.Context, start time.Time, style string, before Befo
 
 	// 选择负载均衡策略
 	var balancer balancers.Balancer
-	// AuthKey 配了首选 Provider 时，每次请求都走 Priority（preferred 优先，失败降级到其它），
-	// 不再叠加 sticky / breaker：sticky 会把降级后的备用 provider 粘住导致 preferred 不再被尝试，
-	// breaker 在 preferred 偶发失败时会把它排除。preferred 是强约束，应每次重新选。
-	preferredProviderID, _ := ctx.Value(consts.ContextKeyAuthKeyPreferredProvider).(uint)
-	if preferredProviderID != 0 {
+	// AuthKey 配了 Provider 优先级列表时，每次请求都走 Priority（按列表顺序优先，失败按序降级），
+	// 不再叠加 sticky / breaker：sticky 会把降级后的备用 provider 粘住导致列表头部不再被尝试，
+	// 且其缓存 key 不含 authkey 会跨 key 污染；breaker 在列表头部 provider 偶发失败时会把它排除。
+	// 列表顺序是强约束，应每次重新选。
+	providerPriorities, _ := ctx.Value(consts.ContextKeyAuthKeyProviderPriorities).([]uint)
+	if len(providerPriorities) > 0 {
 		balancer = balancers.NewPriority(providersWithMeta.WeightItems, providersWithMeta.PriorityItems)
 	} else {
 		switch providersWithMeta.Strategy {
@@ -393,17 +394,13 @@ func ProvidersWithMetaBymodelsName(ctx context.Context, style string, before Bef
 
 	weightItems := make(map[uint]int)
 	priorityItems := make(map[uint]int)
-	preferredProviderID, _ := ctx.Value(consts.ContextKeyAuthKeyPreferredProvider).(uint)
+	providerPriorities, _ := ctx.Value(consts.ContextKeyAuthKeyProviderPriorities).([]uint)
 	for _, mp := range modelWithProviders {
 		if _, ok := providerMap[mp.ProviderID]; !ok {
 			continue
 		}
 		weightItems[mp.ID] = mp.Weight
-		pr := mp.Priority
-		if preferredProviderID != 0 && mp.ProviderID == preferredProviderID {
-			pr = 1 << 30
-		}
-		priorityItems[mp.ID] = pr
+		priorityItems[mp.ID] = boostProviderPriority(mp.ProviderID, mp.Priority, providerPriorities)
 	}
 
 	return &ProvidersWithMeta{

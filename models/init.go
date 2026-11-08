@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 
 	"github.com/glebarez/sqlite"
+	"github.com/samber/lo"
 	gormmysql "gorm.io/driver/mysql"
 	"gorm.io/gorm"
 	"llmio/consts"
@@ -61,6 +62,9 @@ func Init(ctx context.Context, path string) {
 	if _, err := gorm.G[AuthKey](DB).Where("io_log IS NULL").Update(ctx, "io_log", false); err != nil {
 		panic(err)
 	}
+	if err := ensureAuthKeyProviderPriorities(ctx); err != nil {
+		panic(err)
+	}
 	if _, err := gorm.G[ChatLog](DB).Where("auth_key_id IS NULL").Update(ctx, "auth_key_id", 0); err != nil {
 		panic(err)
 	}
@@ -87,6 +91,32 @@ func Init(ctx context.Context, path string) {
 			panic(err)
 		}
 	}
+}
+
+// ensureAuthKeyProviderPriorities 一次性迁移：preferred_provider_id(单值) → provider_priorities(有序列表)。
+// 迁移时同步清空 preferred_provider_id，防止用户升级后清空列表、重启时旧 preferred 复活。
+func ensureAuthKeyProviderPriorities(ctx context.Context) error {
+	keys, err := gorm.G[AuthKey](DB).
+		Where("preferred_provider_id IS NOT NULL AND preferred_provider_id <> 0").
+		Find(ctx)
+	if err != nil {
+		return err
+	}
+	for _, key := range keys {
+		// 内存 len 判断覆盖 SQL NULL / '[]' / 'null' 全部空值形态；已有列表的行不覆盖
+		if len(key.ProviderPriorities) > 0 {
+			continue
+		}
+		if _, err := gorm.G[AuthKey](DB).
+			Where("id = ?", key.ID).
+			Select("provider_priorities", "preferred_provider_id").
+			Updates(ctx, AuthKey{
+				ProviderPriorities: []uint{lo.FromPtr(key.PreferredProviderID)},
+			}); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func ensureModelDisplayOrder(ctx context.Context) error {

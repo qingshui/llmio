@@ -16,15 +16,15 @@ import (
 )
 
 type AuthKeyRequest struct {
-	Name                string   `json:"name" binding:"required"`
-	Key                 string   `json:"key"`
-	Status              *bool    `json:"status"`
-	IOLog               *bool    `json:"io_log"`
-	Debug               *bool    `json:"debug"`
-	AllowAll            *bool    `json:"allow_all"`
-	PreferredProviderID *uint    `json:"preferred_provider_id"`
-	Models              []string `json:"models"`
-	ExpiresAt           *string  `json:"expires_at"`
+	Name               string   `json:"name" binding:"required"`
+	Key                string   `json:"key"`
+	Status             *bool    `json:"status"`
+	IOLog              *bool    `json:"io_log"`
+	Debug              *bool    `json:"debug"`
+	AllowAll           *bool    `json:"allow_all"`
+	ProviderPriorities []uint   `json:"provider_priorities"`
+	Models             []string `json:"models"`
+	ExpiresAt          *string  `json:"expires_at"`
 }
 
 func GetAuthKeys(c *gin.Context) {
@@ -125,15 +125,15 @@ func CreateAuthKey(c *gin.Context) {
 	}
 
 	authKey := models.AuthKey{
-		Name:                req.Name,
-		Key:                 fmt.Sprintf("%s%s", consts.KeyPrefix, key),
-		Status:              req.Status,
-		IOLog:               new(ioLog),
-		Debug:               new(debug),
-		PreferredProviderID: req.PreferredProviderID,
-		AllowAll:            req.AllowAll,
-		Models:              sanitizeModels(req.Models),
-		ExpiresAt:           expiresAt,
+		Name:               req.Name,
+		Key:                fmt.Sprintf("%s%s", consts.KeyPrefix, key),
+		Status:             req.Status,
+		IOLog:              new(ioLog),
+		Debug:              new(debug),
+		ProviderPriorities: sanitizeProviderPriorities(req.ProviderPriorities),
+		AllowAll:           req.AllowAll,
+		Models:             sanitizeModels(req.Models),
+		ExpiresAt:          expiresAt,
 	}
 
 	if err := gorm.G[models.AuthKey](models.DB).Create(ctx, &authKey); err != nil {
@@ -194,14 +194,14 @@ func UpdateAuthKey(c *gin.Context) {
 	}
 
 	update := models.AuthKey{
-		Name:                req.Name,
-		Status:              req.Status,
-		IOLog:               new(ioLog),
-		Debug:               new(debug),
-		PreferredProviderID: req.PreferredProviderID,
-		AllowAll:            req.AllowAll,
-		Models:              sanitizeModels(req.Models),
-		ExpiresAt:           expiresAt,
+		Name:               req.Name,
+		Status:             req.Status,
+		IOLog:              new(ioLog),
+		Debug:              new(debug),
+		ProviderPriorities: sanitizeProviderPriorities(req.ProviderPriorities),
+		AllowAll:           req.AllowAll,
+		Models:             sanitizeModels(req.Models),
+		ExpiresAt:          expiresAt,
 	}
 
 	// 若提交了新的 key 则更新 key 值（支持手动修改密钥）。
@@ -229,7 +229,7 @@ func UpdateAuthKey(c *gin.Context) {
 		}
 	}
 
-	if _, err := gorm.G[models.AuthKey](models.DB).Where("id = ?", id).Select("name", "status", "io_log", "debug", "preferred_provider_id", "allow_all", "models", "expires_at").Updates(ctx, update); err != nil {
+	if _, err := gorm.G[models.AuthKey](models.DB).Where("id = ?", id).Select("name", "status", "io_log", "debug", "provider_priorities", "allow_all", "models", "expires_at").Updates(ctx, update); err != nil {
 		common.InternalServerError(c, "Failed to update auth key: "+err.Error())
 		return
 	}
@@ -351,6 +351,23 @@ func sanitizeModels(modelsList []string) []string {
 		}
 		seen[trimmed] = struct{}{}
 		result = append(result, trimmed)
+	}
+	return result
+}
+
+// sanitizeProviderPriorities 去重保序、去 0；返回值恒非 nil，保证落库为 '[]' 而非 SQL NULL
+func sanitizeProviderPriorities(list []uint) []uint {
+	result := make([]uint, 0, len(list))
+	seen := make(map[uint]struct{}, len(list))
+	for _, id := range list {
+		if id == 0 {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		result = append(result, id)
 	}
 	return result
 }

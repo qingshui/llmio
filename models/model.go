@@ -125,15 +125,18 @@ type ReqMeta struct {
 
 type AuthKey struct {
 	gorm.Model
-	Name                string // 项目名称
-	Key                 string
-	Status              *bool      // 是否启用
-	IOLog               *bool      // 是否记录IO
-	Debug               *bool      // 是否记录DEBUG日志(完整请求/响应)
-	PreferredProviderID *uint      // preferred provider id; boosted to highest priority on hit, fallback to others on failure
-	AllowAll            *bool      // 是否允许所有模型
-	Models              []string   `gorm:"serializer:json"` // 允许的模型列表
-	ExpiresAt           *time.Time // nil=永不过期，有值=具体过期时间
-	UsageCount          int64      // 使用次数统计
-	LastUsedAt          *time.Time // 最后使用时间
+	Name   string // 项目名称
+	Key    string
+	Status *bool // 是否启用
+	IOLog  *bool // 是否记录IO
+	Debug  *bool // 是否记录DEBUG日志(完整请求/响应)
+	// Deprecated: 已被 ProviderPriorities 取代。仅保留列映射供启动迁移读取一次，json:"-" 使其不再出现在 API 响应中
+	PreferredProviderID *uint `json:"-"`
+	// 有序 provider 优先级列表：列表内按序优先、失败按序降级；未列入的排在列表之后，按各自全局 Priority 兜底
+	ProviderPriorities []uint     `gorm:"serializer:json"`
+	AllowAll           *bool      // 是否允许所有模型
+	Models             []string   `gorm:"serializer:json"` // 允许的模型列表
+	ExpiresAt          *time.Time // nil=永不过期，有值=具体过期时间
+	UsageCount         int64      // 使用次数统计
+	LastUsedAt         *time.Time // 最后使用时间
 }
