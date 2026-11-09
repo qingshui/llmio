@@ -8,10 +8,12 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"regexp"
 	"strings"
 	"time"
 
 	"github.com/samber/lo"
+	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 	"gorm.io/gorm"
 	"llmio/balancers"
@@ -219,6 +221,75 @@ func BalanceChat(ctx context.Context, start time.Time, style string, before Befo
 	return nil, nil, fmt.Errorf("All retry failed, trace ID: %s", traceID)
 }
 
+var billingCchRe = regexp.MustCompile(`cch=[0-9a-fA-F]+`)
+
+const billingBlockPrefix = "x-anthropic-billing-header:"
+
+// normalizeBillingText 把 billing 头 block 里逐请求随机的 cch 归一为等长 0。
+// 该 block 位于上下文最头部，随机值会让上游引擎的前缀缓存从 token0 失配，
+// 导致整段多轮上下文每轮全量重算 prefill。
+func normalizeBillingText(text string) (string, bool) {
+	if !strings.HasPrefix(text, billingBlockPrefix) {
+		return text, false
+	}
+	m := billingCchRe.FindString(text)
+	if m == "" {
+		return text, false
+	}
+	v := strings.TrimPrefix(m, "cch=")
+	zeros := strings.Repeat("0", len(v))
+	if v == zeros {
+		return text, false
+	}
+	return strings.Replace(text, m, "cch="+zeros, 1), true
+}
+
+func normalizeBillingCch(rawBody []byte) []byte {
+	setText := func(path, text string) {
+		if nb, err := sjson.SetBytes(rawBody, path, text); err == nil {
+			rawBody = nb
+		} else {
+			slog.Warn("normalize billing cch failed", "path", path, "error", err)
+		}
+	}
+	// anthropic 风格：system 数组中的独立 billing block
+	if sys := gjson.GetBytes(rawBody, "system"); sys.IsArray() {
+		for i, blk := range sys.Array() {
+			text := blk.Get("text")
+			if !text.Exists() {
+				continue
+			}
+			if nt, ok := normalizeBillingText(text.String()); ok {
+				setText(fmt.Sprintf("system.%d.text", i), nt)
+			}
+		}
+	}
+	// openai 风格：头部 system/developer 消息（字符串或分块数组内容）
+	for i := 0; ; i++ {
+		role := gjson.GetBytes(rawBody, fmt.Sprintf("messages.%d.role", i))
+		if !role.Exists() || (role.String() != "system" && role.String() != "developer") {
+			break
+		}
+		content := gjson.GetBytes(rawBody, fmt.Sprintf("messages.%d.content", i))
+		if content.IsArray() {
+			for j, blk := range content.Array() {
+				text := blk.Get("text")
+				if !text.Exists() {
+					continue
+				}
+				if nt, ok := normalizeBillingText(text.String()); ok {
+					setText(fmt.Sprintf("messages.%d.content.%d.text", i, j), nt)
+				}
+			}
+		} else if content.Exists() {
+			if nt, ok := normalizeBillingText(content.String()); ok {
+				setText(fmt.Sprintf("messages.%d.content", i), nt)
+			}
+		}
+	}
+	return rawBody
+}
+
 func buildUpstreamBody(raw []byte, extraBody map[string]any) ([]byte, error) {
 	rawBody := raw
 	if len(extraBody) > 0 {
@@ -230,6 +301,8 @@ func buildUpstreamBody(raw []byte, extraBody map[string]any) ([]byte, error) {
 			}
 		}
 	}
+
+	rawBody = normalizeBillingCch(rawBody)
 
 	rawBody, err := sjson.DeleteBytes(rawBody, "session_id")
 	if err != nil {
