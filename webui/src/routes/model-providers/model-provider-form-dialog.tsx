@@ -274,6 +274,25 @@ export function ModelProviderFormDialog({
                   </FormItem>
                 )}
               />
+              <FormField
+                control={form.control}
+                name="max_input_tokens"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{t('association_form.max_input_tokens')}</FormLabel>
+                    <FormControl>
+                      <Input
+                        {...field}
+                        type="number"
+                        min="0"
+                        onChange={(e) => field.onChange(parseInt(e.target.value) || 0)}
+                      />
+                    </FormControl>
+                    <p className="text-[11px] text-muted-foreground">{t('association_form.max_input_tokens_hint')}</p>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
               <FormLabel>{t('association_form.capabilities')}</FormLabel>
               <FormField
                 control={form.control}

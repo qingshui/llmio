@@ -72,6 +72,18 @@ func GeminiGenerateContentHandler(c *gin.Context) {
 	chatHandler(c, service.NewBeforerGemini(model, stream), service.ProcesserGemini, consts.StyleGemini)
 }
 
+// respondPromptTooLong 按各协议的错误格式返回 400，客户端可据此识别输入超长。
+func respondPromptTooLong(c *gin.Context, style, msg string) {
+	switch style {
+	case consts.StyleAnthropic:
+		c.JSON(http.StatusBadRequest, gin.H{"type": "error", "error": gin.H{"type": "invalid_request_error", "message": msg}})
+	case consts.StyleGemini:
+		c.JSON(http.StatusBadRequest, gin.H{"error": gin.H{"code": http.StatusBadRequest, "message": msg, "status": "INVALID_ARGUMENT"}})
+	default:
+		c.JSON(http.StatusBadRequest, gin.H{"error": gin.H{"message": msg, "type": "invalid_request_error", "code": "context_length_exceeded"}})
+	}
+}
+
 func chatHandler(c *gin.Context, preProcessor service.Beforer, postProcessor service.Processer, style string) {
 	// 读取原始请求体
 	reqBody, err := io.ReadAll(c.Request.Body)
@@ -102,6 +114,11 @@ func chatHandler(c *gin.Context, preProcessor service.Beforer, postProcessor ser
 	authKeyIDForProvider, _ := ctx.Value(consts.ContextKeyAuthKeyID).(uint)
 	providersWithMeta, err := service.ProvidersWithMetaBymodelsName(ctx, style, *before, authKeyIDForProvider)
 	if err != nil {
+		var tooLong *service.PromptTooLongError
+		if errors.As(err, &tooLong) {
+			respondPromptTooLong(c, style, err.Error())
+			return
+		}
 		common.InternalServerError(c, err.Error())
 		return
 	}

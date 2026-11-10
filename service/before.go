@@ -23,8 +23,70 @@ type Before struct {
 	toolCall         bool
 	structuredOutput bool
 	image            bool
+	inputTokens      int
 	SessionID        string
 	raw              []byte
+}
+
+// bytesPerToken 是按请求体字节数粗估输入 token 的系数，中英文混合的 JSON 取 3。
+const bytesPerToken = 3
+
+// estimateInputTokens 按请求体字节数粗估输入 token 数，base64 图片数据不计入。
+func estimateInputTokens(data []byte) int {
+	n := len(data) - base64Bytes(gjson.ParseBytes(data))
+	if n < 0 {
+		return 0
+	}
+	return n / bytesPerToken
+}
+
+// base64Bytes 统计请求体中内嵌 base64 数据（Anthropic source、OpenAI data URI、Gemini inlineData）的字节数。
+func base64Bytes(v gjson.Result) int {
+	var total int
+	switch {
+	case v.IsObject():
+		if v.Get("type").String() == "base64" {
+			total += len(v.Get("data").String())
+		}
+		v.ForEach(func(k, val gjson.Result) bool {
+			switch k.String() {
+			case "inlineData", "inline_data":
+				total += len(val.Get("data").String())
+			case "url":
+				if s := val.String(); strings.HasPrefix(s, "data:") {
+					total += len(s)
+				}
+			default:
+				total += base64Bytes(val)
+			}
+			return true
+		})
+	case v.IsArray():
+		v.ForEach(func(_, val gjson.Result) bool {
+			total += base64Bytes(val)
+			return true
+		})
+	}
+	return total
+}
+
+// anthropicBlockHasImage 判断 content 块本身是 image，或是 tool_result 且其嵌套 content 含 image。
+func anthropicBlockHasImage(block gjson.Result) bool {
+	switch block.Get("type").String() {
+	case "image":
+		return true
+	case "tool_result":
+		var found bool
+		block.Get("content").ForEach(func(_, inner gjson.Result) bool {
+			if inner.Get("type").String() == "image" {
+				found = true
+				return false
+			}
+			return true
+		})
+		return found
+	}
+	return false
 }
 
 type Beforer func(data []byte) (*Before, error)
@@ -130,6 +192,7 @@ func NewBeforerGemini(model string, stream bool) Beforer {
 			toolCall:         toolCall,
 			structuredOutput: structuredOutput,
 			image:            image,
+			inputTokens:      estimateInputTokens(data),
 			SessionID:        gjson.GetBytes(data, "session_id").String(),
 			raw:              data,
 		}, nil
@@ -183,6 +246,7 @@ func BeforerOpenAI(data []byte) (*Before, error) {
 		toolCall:         toolCall,
 		structuredOutput: structuredOutput,
 		image:            image,
+		inputTokens:      estimateInputTokens(data),
 		SessionID:        gjson.GetBytes(data, "session_id").String(),
 		raw:              data,
 	}, nil
@@ -225,6 +289,7 @@ func BeforerOpenAIRes(data []byte) (*Before, error) {
 		toolCall:         toolCall,
 		structuredOutput: structuredOutput,
 		image:            image,
+		inputTokens:      estimateInputTokens(data),
 		SessionID:        gjson.GetBytes(data, "session_id").String(),
 		raw:              data,
 	}, nil
@@ -248,7 +313,7 @@ func BeforerAnthropic(data []byte) (*Before, error) {
 		}
 		if value.Get("role").String() == "user" {
 			value.Get("content").ForEach(func(_, value gjson.Result) bool {
-				if value.Get("type").String() == "image" {
+				if anthropicBlockHasImage(value) {
 					image = true
 					return false
 				}
@@ -263,6 +328,7 @@ func BeforerAnthropic(data []byte) (*Before, error) {
 		toolCall:         toolCall,
 		structuredOutput: toolCall,
 		image:            image,
+		inputTokens:      estimateInputTokens(data),
 		SessionID:        gjson.GetBytes(data, "session_id").String(),
 		raw:              data,
 	}, nil

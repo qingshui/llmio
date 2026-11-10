@@ -39,6 +39,7 @@ export interface ModelWithProvider {
   Status: boolean | null;
   Weight: number;
   Priority: number;
+  MaxInputTokens: number;
   InputPrice: number;
   CacheReadPrice: number;
   OutputPrice: number;
@@ -345,6 +346,7 @@ export async function createModelProvider(association: {
   extra_body: Record<string, unknown>;
   weight: number;
   priority: number;
+  max_input_tokens: number;
   input_price: number;
   cache_read_price: number;
   output_price: number;
@@ -368,6 +370,7 @@ export async function updateModelProvider(id: number, association: {
   extra_body?: Record<string, unknown>;
   weight?: number;
   priority?: number;
+  max_input_tokens?: number;
   input_price?: number;
   cache_read_price?: number;
   output_price?: number;

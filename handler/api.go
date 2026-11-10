@@ -58,6 +58,7 @@ type ModelWithProviderRequest struct {
 	ExtraBody        map[string]any    `json:"extra_body"`
 	Weight           int               `json:"weight"`
 	Priority         int               `json:"priority"`
+	MaxInputTokens   int               `json:"max_input_tokens"`
 	InputPrice       float64           `json:"input_price"`
 	CacheReadPrice   float64           `json:"cache_read_price"`
 	OutputPrice      float64           `json:"output_price"`
@@ -627,6 +628,7 @@ func CreateModelProvider(c *gin.Context) {
 		ExtraBody:        extraBody,
 		Weight:           req.Weight,
 		Priority:         req.Priority,
+		MaxInputTokens:   req.MaxInputTokens,
 		InputPrice:       &req.InputPrice,
 		CacheReadPrice:   &req.CacheReadPrice,
 		OutputPrice:      &req.OutputPrice,
@@ -694,6 +696,7 @@ func UpdateModelProvider(c *gin.Context) {
 		ExtraBody:        extraBody,
 		Weight:           req.Weight,
 		Priority:         req.Priority,
+		MaxInputTokens:   req.MaxInputTokens,
 		InputPrice:       &req.InputPrice,
 		CacheReadPrice:   &req.CacheReadPrice,
 		OutputPrice:      &req.OutputPrice,
@@ -705,9 +708,12 @@ func UpdateModelProvider(c *gin.Context) {
 		return
 	}
 
-	// Force-write priority so that 0 (default/demote) persists — GORM struct Updates skips zero-values.
-	if err := models.DB.Model(&models.ModelWithProvider{}).Where("id = ?", id).Update("priority", req.Priority).Error; err != nil {
-		common.InternalServerError(c, "Failed to update priority: "+err.Error())
+	// Force-write priority and max_input_tokens so that 0 (default/demote/unlimited) persists — GORM struct Updates skips zero-values.
+	if err := models.DB.Model(&models.ModelWithProvider{}).Where("id = ?", id).Updates(map[string]any{
+		"priority":         req.Priority,
+		"max_input_tokens": req.MaxInputTokens,
+	}).Error; err != nil {
+		common.InternalServerError(c, "Failed to update priority and max_input_tokens: "+err.Error())
 		return
 	}
 

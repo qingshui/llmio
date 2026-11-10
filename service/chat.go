@@ -24,7 +24,7 @@ import (
 )
 
 func BalanceChat(ctx context.Context, start time.Time, style string, before Before, providersWithMeta ProvidersWithMeta, reqMeta models.ReqMeta) (*http.Response, *models.ChatLog, error) {
-	slog.Info("request", "model", before.Model, "stream", before.Stream, "tool_call", before.toolCall, "structured_output", before.structuredOutput, "image", before.image)
+	slog.Info("request", "model", before.Model, "stream", before.Stream, "tool_call", before.toolCall, "structured_output", before.structuredOutput, "image", before.image, "input_tokens", before.inputTokens)
 
 	providerMap := providersWithMeta.ProviderMap
 
@@ -397,6 +397,70 @@ type ProvidersWithMeta struct {
 	StickyTTL            int
 }
 
+// PromptTooLongError 表示估算的输入长度超过该模型所有启用关联的上限。
+type PromptTooLongError struct {
+	Estimated int
+	Max       int
+}
+
+func (e *PromptTooLongError) Error() string {
+	return fmt.Sprintf("prompt is too long: about %d tokens > %d maximum", e.Estimated, e.Max)
+}
+
+// enabledAssociations 返回模型下启用且 provider 类型与请求协议一致的关联查询。
+// 协议过滤放在能力过滤之前，避免筛出的关联全属于其他协议而导致无可用 provider。
+func enabledAssociations(modelID uint, style string) gorm.ChainInterface[models.ModelWithProvider] {
+	providerIDs := models.DB.Model(&models.Provider{}).Select("id").Where("type = ?", style)
+	return gorm.G[models.ModelWithProvider](models.DB).
+		Where("model_id = ?", modelID).
+		Where("status = ?", true).
+		Where("provider_id IN (?)", providerIDs)
+}
+
+// findModelWithProviders 按能力和输入长度筛选关联。
+// 能力过滤为空时依次放宽 structured_output、tool_call、image，避免因未声明能力而 500；长度上限始终生效。
+func findModelWithProviders(ctx context.Context, modelID uint, style string, before Before) ([]models.ModelWithProvider, error) {
+	type tier struct{ toolCall, structuredOutput, image bool }
+	tiers := []tier{
+		{before.toolCall, before.structuredOutput, before.image},
+		{before.toolCall, false, before.image},
+		{false, false, before.image},
+		{false, false, false},
+	}
+	for i, t := range tiers {
+		if i > 0 && t == tiers[i-1] {
+			continue
+		}
+		chain := enabledAssociations(modelID, style)
+		if before.inputTokens > 0 {
+			chain = chain.Where("(max_input_tokens = 0 OR max_input_tokens >= ?)", before.inputTokens)
+		}
+		if t.toolCall {
+			chain = chain.Where("tool_call = ?", true)
+		}
+		if t.structuredOutput {
+			chain = chain.Where("structured_output = ?", true)
+		}
+		if t.image {
+			chain = chain.Where("image = ?", true)
+		}
+		found, err := chain.Find(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if len(found) > 0 {
+			if i > 0 {
+				slog.Warn("no provider matches all capability filters, relaxed",
+					"model", before.Model, "input_tokens", before.inputTokens,
+					"want_tool_call", before.toolCall, "want_structured_output", before.structuredOutput, "want_image", before.image,
+					"used_tool_call", t.toolCall, "used_structured_output", t.structuredOutput, "used_image", t.image)
+			}
+			return found, nil
+		}
+	}
+	return nil, nil
+}
+
 func ProvidersWithMetaBymodelsName(ctx context.Context, style string, before Before, authKeyID uint) (*ProvidersWithMeta, error) {
 	model, err := gorm.G[models.Model](models.DB).Where("name = ?", before.Model).First(ctx)
 	if err != nil {
@@ -415,42 +479,34 @@ func ProvidersWithMetaBymodelsName(ctx context.Context, style string, before Bef
 		return nil, err
 	}
 
-	modelWithProviderChain := gorm.G[models.ModelWithProvider](models.DB).Where("model_id = ?", model.ID).Where("status = ?", true)
-
-	if before.toolCall {
-		modelWithProviderChain = modelWithProviderChain.Where("tool_call = ?", true)
-	}
-
-	if before.structuredOutput {
-		modelWithProviderChain = modelWithProviderChain.Where("structured_output = ?", true)
-	}
-
-	if before.image {
-		modelWithProviderChain = modelWithProviderChain.Where("image = ?", true)
-	}
-
-	modelWithProviders, err := modelWithProviderChain.Find(ctx)
+	modelWithProviders, err := findModelWithProviders(ctx, model.ID, style, before)
 	if err != nil {
 		return nil, err
 	}
 
-	// 能力过滤后若无可用 provider，回退到该模型的全部启用关联，
-	// 避免因未在配置中声明 tool_call/structured_output/image 能力而导致 500。
 	if len(modelWithProviders) == 0 {
-		slog.Warn("no provider matches capability filters, falling back to all enabled associations",
-			"model", before.Model, "tool_call", before.toolCall,
-			"structured_output", before.structuredOutput, "image", before.image)
-		modelWithProviders, err = gorm.G[models.ModelWithProvider](models.DB).
-			Where("model_id = ?", model.ID).
-			Where("status = ?", true).
-			Find(ctx)
+		enabled, err := enabledAssociations(model.ID, style).Find(ctx)
 		if err != nil {
 			return nil, err
 		}
-	}
-
-	if len(modelWithProviders) == 0 {
-		return nil, errors.New("not provider for model " + before.Model)
+		if len(enabled) == 0 {
+			return nil, errors.New("not provider for model " + before.Model)
+		}
+		var maxLimit int
+		for _, mp := range enabled {
+			maxLimit = max(maxLimit, mp.MaxInputTokens)
+		}
+		tooLong := &PromptTooLongError{Estimated: before.inputTokens, Max: maxLimit}
+		if _, err := SaveChatLog(ctx, models.ChatLog{
+			Name:      before.Model,
+			Status:    consts.StatusError,
+			Style:     style,
+			SessionID: before.SessionID,
+			Error:     tooLong.Error(),
+		}); err != nil {
+			return nil, err
+		}
+		return nil, tooLong
 	}
 
 	modelWithProviderMap := lo.KeyBy(modelWithProviders, func(mp models.ModelWithProvider) uint { return mp.ID })

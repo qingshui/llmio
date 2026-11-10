@@ -51,6 +51,7 @@ type ModelWithProvider struct {
 	ExtraBody        map[string]any    `gorm:"serializer:json"` // 额外请求体参数
 	Weight           int
 	Priority         int // 优先级，数字越大越优先；仅 priority 策略下分层降级
+	MaxInputTokens   int `gorm:"default:0"` // 最大输入 token 数，0 表示不限制
 	InputPrice       *float64
 	CacheReadPrice   *float64
 	OutputPrice      *float64
