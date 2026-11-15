@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -794,6 +795,50 @@ type WrapLog struct {
 	KeyName string `json:"key_name"`
 }
 
+// chat_logs 全表 COUNT 在 MariaDB 5.5 上需全索引扫描（650 万行 ~1.5s），
+// 日志页筛选组合有限，对低基数筛选做短 TTL 缓存。
+// trace_id/session_id/id 为高基数点查（本身毫秒级），不进缓存以免 key 无限膨胀。
+const (
+	logCountTTL     = 30 * time.Second
+	logCountMaxSize = 256
+)
+
+type logCountEntry struct {
+	total  int64
+	expire time.Time
+}
+
+var (
+	logCountMu      sync.RWMutex
+	logCountEntries = map[string]logCountEntry{}
+)
+
+func logCountCacheGet(key string) (int64, bool) {
+	logCountMu.RLock()
+	e, ok := logCountEntries[key]
+	logCountMu.RUnlock()
+	if !ok || time.Now().After(e.expire) {
+		return 0, false
+	}
+	return e.total, true
+}
+
+func logCountCacheSet(key string, total int64) {
+	logCountMu.Lock()
+	if len(logCountEntries) >= logCountMaxSize {
+		// 理论上只有低基数筛选会到这里，正常远达不到上限；防御性清空
+		logCountEntries = map[string]logCountEntry{}
+	}
+	logCountEntries[key] = logCountEntry{total: total, expire: time.Now().Add(logCountTTL)}
+	logCountMu.Unlock()
+}
+
+func logCountCacheReset() {
+	logCountMu.Lock()
+	logCountEntries = map[string]logCountEntry{}
+	logCountMu.Unlock()
+}
+
 // GetRequestLogs 获取最近的请求日志（支持分页和筛选）
 func GetRequestLogs(c *gin.Context) {
 	// 解析分页参数
@@ -848,13 +893,30 @@ func GetRequestLogs(c *gin.Context) {
 		query = query.Where("id = ?", logID)
 	}
 
+	// with_count=false 时跳过 COUNT（total 返回 -1），供前端翻页复用已有总数
+	withCount := c.Query("with_count") != "false"
+
 	// 统计总数走 Unscoped：去掉 deleted_at IS NULL 后才能纯用
 	// idx_chat_logs_auth_key_id_tokens 覆盖索引计数，否则大 key 会回表扫描上百万行。
 	// chat_logs 的删除均为硬删（log_cleanup / 手动清理），不存在软删除记录，口径不受影响。
-	var total int64
-	if err := query.Unscoped().Count(&total).Error; err != nil {
-		common.InternalServerError(c, "Failed to query logs: "+err.Error())
-		return
+	var total int64 = -1
+	if withCount {
+		cacheable := traceID == "" && sessionID == "" && logID == ""
+		cacheKey := providerName + "\x00" + name + "\x00" + status + "\x00" + style + "\x00" + authKeyID
+		if cacheable {
+			if v, ok := logCountCacheGet(cacheKey); ok {
+				total = v
+			}
+		}
+		if total < 0 {
+			if err := query.Unscoped().Count(&total).Error; err != nil {
+				common.InternalServerError(c, "Failed to query logs: "+err.Error())
+				return
+			}
+			if cacheable {
+				logCountCacheSet(cacheKey, total)
+			}
+		}
 	}
 
 	var logs []models.ChatLog
@@ -1080,6 +1142,9 @@ func CleanLogs(c *gin.Context) {
 		common.BadRequest(c, "Invalid type: must be 'count' or 'days'")
 		return
 	}
+
+	// 日志已被删除，立即失效计数缓存，避免日志页展示过期 total
+	logCountCacheReset()
 
 	retentionDays := 0
 	if req.Type == "days" {

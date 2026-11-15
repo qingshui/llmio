@@ -568,11 +568,13 @@ export async function getLogs(
     traceId?: string;
     sessionId?: string;
     id?: string;
-  } = {}
+  } = {},
+  withCount: boolean = true
 ): Promise<LogsResponse> {
   const params = new URLSearchParams();
   params.append("page", page.toString());
   params.append("page_size", pageSize.toString());
+  if (!withCount) params.append("with_count", "false");
 
   if (filters.name) params.append("name", filters.name);
   if (filters.providerModel) params.append("provider_model", filters.providerModel);

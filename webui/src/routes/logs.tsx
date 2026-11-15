@@ -1,4 +1,4 @@
-import { useState, useEffect, type ReactNode } from "react";
+import { useState, useEffect, useRef, type ReactNode } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
@@ -171,9 +171,13 @@ export default function LogsPage() {
       console.error("Error fetching auth keys:", error);
     }
   };
-  const fetchLogs = async () => {
+  // 仅筛选/每页大小变化或手动刷新时重新统计总数；翻页复用已有 total 跳过 count
+  const lastCountSigRef = useRef("");
+  const fetchLogs = async (forceCount = false) => {
     setLoading(true);
     try {
+      const countSig = JSON.stringify([pageSize, providerNameFilter, modelFilter, statusFilter, styleFilter, authKeyFilter, traceIdFilter, sessionIdFilter, idFilter]);
+      const needCount = forceCount || countSig !== lastCountSigRef.current;
       const result = await getLogs(page, pageSize, {
         providerName: providerNameFilter === "all" ? undefined : providerNameFilter,
         name: modelFilter === "all" ? undefined : modelFilter,
@@ -183,10 +187,13 @@ export default function LogsPage() {
         traceId: traceIdFilter.trim() || undefined,
         sessionId: sessionIdFilter.trim() || undefined,
         id: idFilter.trim() || undefined,
-      });
+      }, needCount);
       setLogs(result.data);
-      setTotal(result.total);
-      setPages(result.pages);
+      if (needCount) {
+        setTotal(result.total);
+        setPages(result.pages);
+        lastCountSigRef.current = countSig;
+      }
     } catch (error) {
       console.error("Error fetching logs:", error);
     } finally {
@@ -207,7 +214,7 @@ export default function LogsPage() {
     patchParams({ pageSize: size, page: 1 });
   };
   const handleRefresh = () => {
-    fetchLogs();
+    fetchLogs(true);
   };
   const handleCleanTypeChange = (type: 'count' | 'days') => {
     setCleanType(type);
@@ -221,7 +228,7 @@ export default function LogsPage() {
     try {
       const result = await cleanLogs({ type: cleanType, value });
       toast.success(t('clean.success', { count: result.deleted_count }));
-      fetchLogs();
+      fetchLogs(true);
     } catch (error) {
       console.error("Error cleaning logs:", error);
       toast.error(t('clean.failed'));
