@@ -10,15 +10,15 @@ import (
 	"time"
 	_ "time/tzdata"
 
+	"github.com/gin-contrib/gzip"
+	"github.com/gin-gonic/gin"
+	_ "golang.org/x/crypto/x509roots/fallback"
 	"llmio/consts"
 	"llmio/handler"
 	"llmio/middleware"
 	"llmio/models"
 	"llmio/pkg/env"
 	"llmio/service"
-	"github.com/gin-contrib/gzip"
-	"github.com/gin-gonic/gin"
-	_ "golang.org/x/crypto/x509roots/fallback"
 )
 
 func init() {
@@ -29,6 +29,7 @@ func init() {
 
 func main() {
 	service.StartLogCleanupScheduler(context.Background())
+	service.WarmChatLogsWatermark()
 
 	router := gin.Default()
 	// 信任前置代理（nginx 等），使 c.ClientIP() 返回真实客户端 IP 而非代理本机 IP。

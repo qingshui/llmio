@@ -11,6 +11,9 @@ type Config struct {
 const (
 	KeyAnthropicCountTokens = "anthropic_count_tokens"
 	KeyLogCleanupPolicy     = "log_cleanup_policy"
+	// KeyChatLogsCountWatermark chat_logs 总数水位线（全量口径的 max_id + count），
+	// 供日志页增量计数，见 service/chat_log_count.go
+	KeyChatLogsCountWatermark = "chat_logs_count_watermark"
 )
 
 type AnthropicCountTokens struct {

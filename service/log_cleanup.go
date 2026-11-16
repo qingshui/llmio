@@ -80,6 +80,9 @@ func CleanLogsByDays(ctx context.Context, days int) (int64, error) {
 		slog.Info("chat_io files removed", "count", removed)
 	}
 
+	// 清理删的是老行，总数水位线基数会虚高，必须失效重算
+	InvalidateChatLogsWatermark(ctx)
+
 	return deletedCount, nil
 }
 

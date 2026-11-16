@@ -795,32 +795,69 @@ type WrapLog struct {
 	KeyName string `json:"key_name"`
 }
 
-// chat_logs 全表 COUNT 在 MariaDB 5.5 上需全索引扫描（650 万行 ~1.5s），
-// 日志页筛选组合有限，对低基数筛选做短 TTL 缓存。
-// trace_id/session_id/id 为高基数点查（本身毫秒级），不进缓存以免 key 无限膨胀。
+// chat_logs 的低基数筛选组合 COUNT 做短 TTL 缓存 + SWR：
+// 过期后先返回旧值、后台单飞刷新，避免大 key（如 300 万行的 auth_key_id 筛选，
+// COUNT 需数秒）在缓存过期后阻塞日志页。全表总数不走这里，改用水位线增量
+// （service/chat_log_count.go）。trace_id/session_id/id 为高基数点查
+// （本身毫秒级），不进缓存以免 key 无限膨胀。
 const (
 	logCountTTL     = 30 * time.Second
 	logCountMaxSize = 256
 )
 
 type logCountEntry struct {
-	total  int64
-	expire time.Time
+	total      int64
+	expire     time.Time
+	refreshing bool
 }
 
 var (
-	logCountMu      sync.RWMutex
+	logCountMu      sync.Mutex
 	logCountEntries = map[string]logCountEntry{}
 )
 
-func logCountCacheGet(key string) (int64, bool) {
-	logCountMu.RLock()
+// logCountSWR：命中未过期直接返回；过期（含刷新中）返回旧值并后台单飞刷新；
+// 未命中同步计算（筛选组合首次访问，通常几十 ms）。
+func logCountSWR(key string, compute func() (int64, error)) (int64, error) {
+	logCountMu.Lock()
 	e, ok := logCountEntries[key]
-	logCountMu.RUnlock()
-	if !ok || time.Now().After(e.expire) {
-		return 0, false
+	if ok {
+		if time.Now().Before(e.expire) {
+			logCountMu.Unlock()
+			return e.total, nil
+		}
+		if !e.refreshing {
+			e.refreshing = true
+			logCountEntries[key] = e
+			logCountMu.Unlock()
+			go func() {
+				t, err := compute()
+				logCountMu.Lock()
+				cur := logCountEntries[key]
+				cur.refreshing = false
+				if err == nil {
+					cur.total, cur.expire = t, time.Now().Add(logCountTTL)
+				}
+				logCountEntries[key] = cur
+				logCountMu.Unlock()
+			}()
+			return e.total, nil
+		}
+		logCountMu.Unlock()
+		return e.total, nil
 	}
-	return e.total, true
+	logCountMu.Unlock()
+
+	t, err := compute()
+	if err != nil {
+		return 0, err
+	}
+	logCountCacheSet(key, t)
+	return t, nil
+}
+
+func logCountCacheKey(providerName, name, status, style, authKeyID string) string {
+	return providerName + "\x00" + name + "\x00" + status + "\x00" + style + "\x00" + authKeyID
 }
 
 func logCountCacheSet(key string, total int64) {
@@ -837,6 +874,36 @@ func logCountCacheReset() {
 	logCountMu.Lock()
 	logCountEntries = map[string]logCountEntry{}
 	logCountMu.Unlock()
+}
+
+// applyLogFilters 按查询参数构建 chat_logs 筛选条件。
+// COUNT 的 SWR 后台刷新会并发重建查询，不能与主查询共享 statement，故每次新建。
+func applyLogFilters(query *gorm.DB, c *gin.Context) *gorm.DB {
+	if v := c.Query("provider_name"); v != "" {
+		query = query.Where("provider_name = ?", v)
+	}
+	if v := c.Query("name"); v != "" {
+		query = query.Where("name = ?", v)
+	}
+	if v := c.Query("status"); v != "" {
+		query = query.Where("status = ?", v)
+	}
+	if v := c.Query("style"); v != "" {
+		query = query.Where("style = ?", v)
+	}
+	if v := c.Query("auth_key_id"); v != "" {
+		query = query.Where("auth_key_id = ?", v)
+	}
+	if v := c.Query("trace_id"); v != "" {
+		query = query.Where("trace_id = ?", v)
+	}
+	if v := c.Query("session_id"); v != "" {
+		query = query.Where("session_id = ?", v)
+	}
+	if v := c.Query("id"); v != "" {
+		query = query.Where("id = ?", v)
+	}
+	return query
 }
 
 // GetRequestLogs 获取最近的请求日志（支持分页和筛选）
@@ -858,68 +925,43 @@ func GetRequestLogs(c *gin.Context) {
 	sessionID := c.Query("session_id")
 	logID := c.Query("id")
 
-	// 构建查询条件
-	query := models.DB.Model(&models.ChatLog{})
-
-	if providerName != "" {
-		query = query.Where("provider_name = ?", providerName)
-	}
-
-	if name != "" {
-		query = query.Where("name = ?", name)
-	}
-
-	if status != "" {
-		query = query.Where("status = ?", status)
-	}
-
-	if style != "" {
-		query = query.Where("style = ?", style)
-	}
-
-	if authKeyID != "" {
-		query = query.Where("auth_key_id = ?", authKeyID)
-	}
-
-	if traceID != "" {
-		query = query.Where("trace_id = ?", traceID)
-	}
-
-	if sessionID != "" {
-		query = query.Where("session_id = ?", sessionID)
-	}
-
-	if logID != "" {
-		query = query.Where("id = ?", logID)
-	}
-
 	// with_count=false 时跳过 COUNT（total 返回 -1），供前端翻页复用已有总数
 	withCount := c.Query("with_count") != "false"
 
-	// 统计总数走 Unscoped：去掉 deleted_at IS NULL 后才能纯用
-	// idx_chat_logs_auth_key_id_tokens 覆盖索引计数，否则大 key 会回表扫描上百万行。
-	// chat_logs 的删除均为硬删（log_cleanup / 手动清理），不存在软删除记录，口径不受影响。
 	var total int64 = -1
 	if withCount {
-		cacheable := traceID == "" && sessionID == "" && logID == ""
-		cacheKey := providerName + "\x00" + name + "\x00" + status + "\x00" + style + "\x00" + authKeyID
-		if cacheable {
-			if v, ok := logCountCacheGet(cacheKey); ok {
-				total = v
-			}
+		// 统计总数走 Unscoped：去掉 deleted_at IS NULL 后才能纯用
+		// idx_chat_logs_auth_key_id_tokens 覆盖索引计数，否则大 key 会回表扫描上百万行。
+		// chat_logs 的删除均为硬删（log_cleanup / 手动清理），不存在软删除记录，口径不受影响。
+		unfiltered := providerName == "" && name == "" && status == "" && style == "" && authKeyID == ""
+		pointQuery := traceID != "" || sessionID != "" || logID != ""
+
+		var countErr error
+		switch {
+		case unfiltered && !pointQuery:
+			// 全表总数：水位线增量（精确，毫秒级），见 service/chat_log_count.go
+			total, countErr = service.ChatLogsTotal(c.Request.Context())
+		case pointQuery:
+			// 点查命中行数少，直接 COUNT
+			countErr = applyLogFilters(models.DB.Model(&models.ChatLog{}), c).Unscoped().Count(&total).Error
+		default:
+			// 低基数筛选组合：SWR 缓存，过期返回旧值 + 后台刷新
+			total, countErr = logCountSWR(logCountCacheKey(providerName, name, status, style, authKeyID), func() (int64, error) {
+				var t int64
+				if err := applyLogFilters(models.DB.Model(&models.ChatLog{}), c).Unscoped().Count(&t).Error; err != nil {
+					return 0, err
+				}
+				return t, nil
+			})
 		}
-		if total < 0 {
-			if err := query.Unscoped().Count(&total).Error; err != nil {
-				common.InternalServerError(c, "Failed to query logs: "+err.Error())
-				return
-			}
-			if cacheable {
-				logCountCacheSet(cacheKey, total)
-			}
+		if countErr != nil {
+			common.InternalServerError(c, "Failed to count logs: "+countErr.Error())
+			return
 		}
 	}
 
 	var logs []models.ChatLog
+	query := applyLogFilters(models.DB.Model(&models.ChatLog{}), c)
 	if err := common.ApplyPagination(query.Order("id DESC"), params).Find(&logs).Error; err != nil {
 		common.InternalServerError(c, "Failed to query logs: "+err.Error())
 		return
@@ -1143,8 +1185,9 @@ func CleanLogs(c *gin.Context) {
 		return
 	}
 
-	// 日志已被删除，立即失效计数缓存，避免日志页展示过期 total
+	// 日志已被删除，立即失效筛选计数缓存与全表总数水位线，避免日志页展示过期 total
 	logCountCacheReset()
+	service.InvalidateChatLogsWatermark(c.Request.Context())
 
 	retentionDays := 0
 	if req.Type == "days" {
