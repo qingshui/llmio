@@ -110,6 +110,7 @@ export default function LogsPage() {
   const traceIdFilter = searchParams.get('traceId') ?? '';
   const sessionIdFilter = searchParams.get('sessionId') ?? '';
   const idFilter = searchParams.get('id') ?? '';
+  const daysFilter = searchParams.get('days') ?? '30';
 
   const patchParams = (patch: Record<string, string | number>) => {
     setSearchParams(prev => {
@@ -120,7 +121,8 @@ export default function LogsPage() {
           s === '' ||
           (['providerName', 'model', 'status', 'style', 'authKey'].includes(k) && s === 'all') ||
           (k === 'page' && s === '1') ||
-          (k === 'pageSize' && s === '20');
+          (k === 'pageSize' && s === '20') ||
+          (k === 'days' && s === '30');
         if (isDefault) next.delete(k);
         else next.set(k, s);
       }
@@ -133,6 +135,7 @@ export default function LogsPage() {
   const setStyleFilter = (v: string) => patchParams({ style: v, page: 1 });
   const setAuthKeyFilter = (v: string) => patchParams({ authKey: v, page: 1 });
   const setTraceIdFilter = (v: string) => patchParams({ traceId: v, page: 1 });
+  const setDaysFilter = (v: string) => patchParams({ days: v, page: 1 });
   const setSessionIdFilter = (v: string) => patchParams({ sessionId: v, page: 1 });
   const setIdFilter = (v: string) => patchParams({ id: v, page: 1 });
   // 详情弹窗
@@ -176,9 +179,10 @@ export default function LogsPage() {
   const fetchLogs = async (forceCount = false) => {
     setLoading(true);
     try {
-      const countSig = JSON.stringify([pageSize, providerNameFilter, modelFilter, statusFilter, styleFilter, authKeyFilter, traceIdFilter, sessionIdFilter, idFilter]);
+      const countSig = JSON.stringify([pageSize, providerNameFilter, modelFilter, statusFilter, styleFilter, authKeyFilter, traceIdFilter, sessionIdFilter, idFilter, daysFilter]);
       const needCount = forceCount || countSig !== lastCountSigRef.current;
       const result = await getLogs(page, pageSize, {
+        days: daysFilter === '30' ? undefined : daysFilter,
         providerName: providerNameFilter === "all" ? undefined : providerNameFilter,
         name: modelFilter === "all" ? undefined : modelFilter,
         status: statusFilter === "all" ? undefined : statusFilter,
@@ -205,7 +209,7 @@ export default function LogsPage() {
     fetchModels();
     fetchAuthKeys();
     fetchLogs();
-  }, [page, pageSize, providerNameFilter, modelFilter, statusFilter, styleFilter, authKeyFilter, traceIdFilter, sessionIdFilter, idFilter]);
+  }, [page, pageSize, providerNameFilter, modelFilter, statusFilter, styleFilter, authKeyFilter, traceIdFilter, sessionIdFilter, idFilter, daysFilter]);
   const handlePageChange = (newPage: number) => {
     if (newPage >= 1 && newPage <= pages) patchParams({ page: newPage });
   };
@@ -308,7 +312,20 @@ export default function LogsPage() {
       </div>
       {/* 筛选区域 */}
       <div className="flex flex-col gap-2 flex-shrink-0">
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5 lg:gap-4">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6 lg:gap-3">
+          <div className="flex flex-col gap-1 text-xs lg:min-w-0">
+            <Label className="text-[11px] text-muted-foreground uppercase tracking-wide">{t('filters.range')}</Label>
+            <Select value={daysFilter} onValueChange={setDaysFilter}>
+              <SelectTrigger className="h-8 text-xs w-full px-2">
+                <SelectValue placeholder={t('filters.range')} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="30">{t('filters.range_30')}</SelectItem>
+                <SelectItem value="90">{t('filters.range_90')}</SelectItem>
+                <SelectItem value="all">{t('filters.range_all')}</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
           <div className="flex flex-col gap-1 text-xs lg:min-w-0">
             <Label className="text-[11px] text-muted-foreground uppercase tracking-wide">{t('filters.model')}</Label>
             <Select value={modelFilter} onValueChange={setModelFilter}>

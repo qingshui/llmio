@@ -21,6 +21,10 @@
     "failed": "清理失敗"
   },
   "filters": {
+    "range": "時間範圍",
+    "range_30": "30 天",
+    "range_90": "90 天",
+    "range_all": "全部",
     "model": "模型名稱",
     "model_placeholder": "選擇模型",
     "project": "專案",

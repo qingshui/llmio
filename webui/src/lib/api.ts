@@ -568,6 +568,7 @@ export async function getLogs(
     traceId?: string;
     sessionId?: string;
     id?: string;
+    days?: string;
   } = {},
   withCount: boolean = true
 ): Promise<LogsResponse> {
@@ -576,6 +577,7 @@ export async function getLogs(
   params.append("page_size", pageSize.toString());
   if (!withCount) params.append("with_count", "false");
 
+  if (filters.days) params.append("days", filters.days);
   if (filters.name) params.append("name", filters.name);
   if (filters.providerModel) params.append("provider_model", filters.providerModel);
   if (filters.providerName) params.append("provider_name", filters.providerName);

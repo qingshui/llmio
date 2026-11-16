@@ -21,6 +21,10 @@
     "failed": "Clean failed"
   },
   "filters": {
+    "range": "Time Range",
+    "range_30": "30 Days",
+    "range_90": "90 Days",
+    "range_all": "All",
     "model": "Model",
     "model_placeholder": "Select model",
     "project": "Project",

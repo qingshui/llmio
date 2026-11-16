@@ -21,6 +21,10 @@
     "failed": "清理失败"
   },
   "filters": {
+    "range": "时间范围",
+    "range_30": "30 天",
+    "range_90": "90 天",
+    "range_all": "全部",
     "model": "模型名称",
     "model_placeholder": "选择模型",
     "project": "项目",

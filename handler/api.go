@@ -803,6 +803,7 @@ type WrapLog struct {
 const (
 	logCountTTL     = 30 * time.Second
 	logCountMaxSize = 256
+	defaultLogDays  = 30
 )
 
 type logCountEntry struct {
@@ -856,8 +857,8 @@ func logCountSWR(key string, compute func() (int64, error)) (int64, error) {
 	return t, nil
 }
 
-func logCountCacheKey(providerName, name, status, style, authKeyID string) string {
-	return providerName + "\x00" + name + "\x00" + status + "\x00" + style + "\x00" + authKeyID
+func logCountCacheKey(providerName, name, status, style, authKeyID, daysKey string) string {
+	return providerName + "\x00" + name + "\x00" + status + "\x00" + style + "\x00" + authKeyID + "\x00" + daysKey
 }
 
 func logCountCacheSet(key string, total int64) {
@@ -876,9 +877,37 @@ func logCountCacheReset() {
 	logCountMu.Unlock()
 }
 
+// parseLogDays 归一化时间范围参数 days：合法正整数返回 (false, N)，
+// "all" 返回 (true, 0) 不加时间条件；缺省/非法按默认 30 天。
+func parseLogDays(c *gin.Context) (all bool, n int) {
+	switch v := c.Query("days"); v {
+	case "all":
+		return true, 0
+	case "":
+		return false, defaultLogDays
+	default:
+		if d, err := strconv.Atoi(v); err == nil && d > 0 {
+			return false, d
+		}
+		return false, defaultLogDays
+	}
+}
+
+// logDaysKey 时间范围在 COUNT 缓存 key 中的归一化表示
+func logDaysKey(c *gin.Context) string {
+	if all, n := parseLogDays(c); all {
+		return "all"
+	} else {
+		return strconv.Itoa(n)
+	}
+}
+
 // applyLogFilters 按查询参数构建 chat_logs 筛选条件。
 // COUNT 的 SWR 后台刷新会并发重建查询，不能与主查询共享 statement，故每次新建。
 func applyLogFilters(query *gorm.DB, c *gin.Context) *gorm.DB {
+	if all, n := parseLogDays(c); !all {
+		query = query.Where("created_at >= ?", time.Now().AddDate(0, 0, -n))
+	}
 	if v := c.Query("provider_name"); v != "" {
 		query = query.Where("provider_name = ?", v)
 	}
@@ -934,19 +963,20 @@ func GetRequestLogs(c *gin.Context) {
 		// idx_chat_logs_auth_key_id_tokens 覆盖索引计数，否则大 key 会回表扫描上百万行。
 		// chat_logs 的删除均为硬删（log_cleanup / 手动清理），不存在软删除记录，口径不受影响。
 		unfiltered := providerName == "" && name == "" && status == "" && style == "" && authKeyID == ""
+		daysAll, _ := parseLogDays(c)
 		pointQuery := traceID != "" || sessionID != "" || logID != ""
 
 		var countErr error
 		switch {
-		case unfiltered && !pointQuery:
+		case unfiltered && daysAll && !pointQuery:
 			// 全表总数：水位线增量（精确，毫秒级），见 service/chat_log_count.go
 			total, countErr = service.ChatLogsTotal(c.Request.Context())
 		case pointQuery:
 			// 点查命中行数少，直接 COUNT
 			countErr = applyLogFilters(models.DB.Model(&models.ChatLog{}), c).Unscoped().Count(&total).Error
 		default:
-			// 低基数筛选组合：SWR 缓存，过期返回旧值 + 后台刷新
-			total, countErr = logCountSWR(logCountCacheKey(providerName, name, status, style, authKeyID), func() (int64, error) {
+			// 低基数筛选组合（含时间范围 30d/90d）：SWR 缓存，过期返回旧值 + 后台刷新
+			total, countErr = logCountSWR(logCountCacheKey(providerName, name, status, style, authKeyID, logDaysKey(c)), func() (int64, error) {
 				var t int64
 				if err := applyLogFilters(models.DB.Model(&models.ChatLog{}), c).Unscoped().Count(&t).Error; err != nil {
 					return 0, err
