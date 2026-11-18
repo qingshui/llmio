@@ -908,6 +908,11 @@ func applyLogFilters(query *gorm.DB, c *gin.Context) *gorm.DB {
 	if all, n := parseLogDays(c); !all {
 		query = query.Where("created_at >= ?", time.Now().AddDate(0, 0, -n))
 	}
+	return applyLogFieldFilters(query, c)
+}
+
+// applyLogFieldFilters 只应用字段筛选，不含时间范围。
+func applyLogFieldFilters(query *gorm.DB, c *gin.Context) *gorm.DB {
 	if v := c.Query("provider_name"); v != "" {
 		query = query.Where("provider_name = ?", v)
 	}
@@ -933,6 +938,62 @@ func applyLogFilters(query *gorm.DB, c *gin.Context) *gorm.DB {
 		query = query.Where("id = ?", v)
 	}
 	return query
+}
+
+// logCountUncoveredFilter 报告是否带有 idx_chat_logs_range_stats
+// (created_at, name, auth_key_id, total_tokens) 之外的筛选列。
+func logCountUncoveredFilter(c *gin.Context) bool {
+	return c.Query("provider_name") != "" || c.Query("status") != "" || c.Query("style") != ""
+}
+
+// logWindowMinID 返回时间窗口内最早一行的 id（走 created_at 索引，毫秒级），窗口内无行返回 0。
+func logWindowMinID(db *gorm.DB, days int) (int64, error) {
+	var ids []int64
+	err := db.Unscoped().Model(&models.ChatLog{}).
+		Where("created_at >= ?", time.Now().AddDate(0, 0, -days)).
+		Order("created_at ASC").Limit(1).Pluck("id", &ids).Error
+	if err != nil || len(ids) == 0 {
+		return 0, err
+	}
+	return ids[0], nil
+}
+
+// logCountQuery 构建筛选组合的 COUNT 查询（Unscoped，口径见 GetRequestLogs）。
+// MariaDB 5.5 下 created_at 范围会让优化器选不含 created_at 的单列索引并逐行回表，
+// 分两种情况规避：
+//   - minID > 0（含 provider_name/status/style 的组合）：用 id >= minID 代替 created_at 范围。
+//     日志按时间追加、id 单调，窗口边界按 id 近似；这些索引末列都是 id，可纯索引范围扫描。
+//   - 仅 auth_key_id/name（MySQL）：强制走覆盖它们的 idx_chat_logs_range_stats，只扫索引（约 1s）。
+func logCountQuery(db *gorm.DB, c *gin.Context, minID int64) *gorm.DB {
+	query := db.Model(&models.ChatLog{})
+	daysAll, _ := parseLogDays(c)
+	switch {
+	case minID > 0:
+		query = applyLogFieldFilters(query, c).Where("id >= ?", minID)
+	case !daysAll && !logCountUncoveredFilter(c) && db.Dialector.Name() == "mysql":
+		query = applyLogFilters(query.Table("chat_logs FORCE INDEX (idx_chat_logs_range_stats)"), c)
+	default:
+		query = applyLogFilters(query, c)
+	}
+	return query.Unscoped()
+}
+
+// countLogs 统计筛选组合的行数，按筛选列选择 logCountQuery 的计划。
+func countLogs(db *gorm.DB, c *gin.Context) (int64, error) {
+	var minID int64
+	if daysAll, n := parseLogDays(c); !daysAll && logCountUncoveredFilter(c) {
+		id, err := logWindowMinID(db, n)
+		if err != nil {
+			return 0, err
+		}
+		if id == 0 {
+			return 0, nil
+		}
+		minID = id
+	}
+	var total int64
+	err := logCountQuery(db, c, minID).Count(&total).Error
+	return total, err
 }
 
 // GetRequestLogs 获取最近的请求日志（支持分页和筛选）
@@ -977,11 +1038,7 @@ func GetRequestLogs(c *gin.Context) {
 		default:
 			// 低基数筛选组合（含时间范围 30d/90d）：SWR 缓存，过期返回旧值 + 后台刷新
 			total, countErr = logCountSWR(logCountCacheKey(providerName, name, status, style, authKeyID, logDaysKey(c)), func() (int64, error) {
-				var t int64
-				if err := applyLogFilters(models.DB.Model(&models.ChatLog{}), c).Unscoped().Count(&t).Error; err != nil {
-					return 0, err
-				}
-				return t, nil
+				return countLogs(models.DB, c)
 			})
 		}
 		if countErr != nil {
