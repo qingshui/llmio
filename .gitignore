@@ -2,6 +2,7 @@
 .claude
 llmio.db
 llmio
+llmio.bak*
 api.md
 todo.md
 db
