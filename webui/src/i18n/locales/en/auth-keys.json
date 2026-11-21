@@ -64,7 +64,9 @@
     "select_date": "Select date",
     "saving": "Saving...",
     "save": "Save",
-    "cancel": "Cancel"
+    "cancel": "Cancel",
+    "image_auto_route_label": "Image auto-routing",
+    "image_auto_route_hint": "When enabled, image requests that the requested model cannot serve are automatically rerouted to an image-capable model in the allowed list."
   },
   "delete_dialog": {
     "title": "Delete this API Key?",

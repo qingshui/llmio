@@ -116,6 +116,7 @@ func checkAuthKey(c *gin.Context, key string, adminToken string) {
 	ctx = context.WithValue(ctx, consts.ContextKeyAuthKeyID, authKey.ID)
 	ctx = context.WithValue(ctx, consts.ContextKeyAuthKeyIOLog, lo.FromPtrOr(authKey.IOLog, false))
 	ctx = context.WithValue(ctx, consts.ContextKeyAuthKeyDebug, lo.FromPtrOr(authKey.Debug, false))
+	ctx = context.WithValue(ctx, consts.ContextKeyImageAutoRoute, lo.FromPtrOr(authKey.ImageAutoRoute, false))
 	// ProviderPriorities 切片来自 singleflight 共享的 *AuthKey，消费方只读，严禁原地修改
 	ctx = context.WithValue(ctx, consts.ContextKeyAuthKeyProviderPriorities, authKey.ProviderPriorities)
 

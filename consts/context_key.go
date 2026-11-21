@@ -9,6 +9,7 @@ const (
 	ContextKeyAuthKeyIOLog              ContextKey = "auth_key_io_log"
 	ContextKeyAuthKeyDebug              ContextKey = "auth_key_debug"
 	ContextKeyAuthKeyProviderPriorities ContextKey = "auth_key_provider_priorities"
+	ContextKeyImageAutoRoute            ContextKey = "auth_key_image_auto_route"
 )
 
 const (

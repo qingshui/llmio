@@ -147,7 +147,9 @@
     "currency": "Currency",
     "input_price": "Input Price",
     "cache_read_price": "Cache Read Price",
-    "output_price": "Output Price"
+    "output_price": "Output Price",
+    "max_image_pixels": "Max image pixels",
+    "max_image_pixels_hint": "0 means unlimited. Requests whose images total more pixels than this will not be routed to this association."
   },
   "test_dialog": {
     "title": "Model Test",

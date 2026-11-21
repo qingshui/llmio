@@ -147,7 +147,9 @@
     "currency": "货币",
     "input_price": "输入价格",
     "cache_read_price": "缓存命中价格",
-    "output_price": "输出价格"
+    "output_price": "输出价格",
+    "max_image_pixels": "图片像素上限",
+    "max_image_pixels_hint": "0 表示不限制。请求内图片总像素超过该值时，请求不会路由到此关联。"
   },
   "test_dialog": {
     "title": "模型测试",

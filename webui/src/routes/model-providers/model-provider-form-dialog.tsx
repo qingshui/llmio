@@ -293,6 +293,25 @@ export function ModelProviderFormDialog({
                   </FormItem>
                 )}
               />
+              <FormField
+                control={form.control}
+                name="max_image_pixels"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{t('association_form.max_image_pixels')}</FormLabel>
+                    <FormControl>
+                      <Input
+                        {...field}
+                        type="number"
+                        min="0"
+                        onChange={(e) => field.onChange(parseInt(e.target.value) || 0)}
+                      />
+                    </FormControl>
+                    <p className="text-[11px] text-muted-foreground">{t('association_form.max_image_pixels_hint')}</p>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
               <FormLabel>{t('association_form.capabilities')}</FormLabel>
               <FormField
                 control={form.control}

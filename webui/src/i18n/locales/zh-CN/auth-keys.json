@@ -64,7 +64,9 @@
     "select_date": "选择日期",
     "saving": "保存中...",
     "save": "保存",
-    "cancel": "取消"
+    "cancel": "取消",
+    "image_auto_route_label": "图片自动路由",
+    "image_auto_route_hint": "开启后，带图请求在原模型接不住时自动改选允许列表内支持图像的模型。"
   },
   "delete_dialog": {
     "title": "确认删除这个 API Key？",

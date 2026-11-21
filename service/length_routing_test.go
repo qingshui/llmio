@@ -196,7 +196,7 @@ func TestProvidersWithMetaPromptTooLong(t *testing.T) {
 	seedAssoc(t, m.ID, 1, 1000, false, false, false)
 	seedAssoc(t, m.ID, 2, 2000, false, false, false)
 
-	_, err := ProvidersWithMetaBymodelsName(context.Background(), consts.StyleAnthropic, Before{Model: "m-long", inputTokens: 5000}, 0)
+	_, _, err := ProvidersWithMetaBymodelsName(context.Background(), consts.StyleAnthropic, Before{Model: "m-long", inputTokens: 5000}, 0)
 	var tooLong *PromptTooLongError
 	if !errors.As(err, &tooLong) {
 		t.Fatalf("err = %v, want PromptTooLongError", err)
@@ -209,7 +209,7 @@ func TestProvidersWithMetaPromptTooLong(t *testing.T) {
 	if err := models.DB.Create(&empty).Error; err != nil {
 		t.Fatal(err)
 	}
-	_, err = ProvidersWithMetaBymodelsName(context.Background(), consts.StyleAnthropic, Before{Model: "m-empty", inputTokens: 5000}, 0)
+	_, _, err = ProvidersWithMetaBymodelsName(context.Background(), consts.StyleAnthropic, Before{Model: "m-empty", inputTokens: 5000}, 0)
 	if err == nil || errors.As(err, &tooLong) {
 		t.Errorf("err = %v, want plain not-provider error", err)
 	}

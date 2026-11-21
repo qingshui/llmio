@@ -110,18 +110,26 @@ func chatHandler(c *gin.Context, preProcessor service.Beforer, postProcessor ser
 		common.ErrorWithHttpStatus(c, http.StatusForbidden, http.StatusForbidden, fmt.Sprintf("auth key has no permission to use %s", before.Model))
 		return
 	}
-	// 按模型获取可用 provider（带 AuthKey 级别优先级覆盖）
+	// 按模型获取可用 provider（带 AuthKey 级别优先级覆盖）。
+	// 返回的 effBefore 可能与请求不同：带图请求在原模型无图像能力时，
+	// 已回退到 AuthKey 允许的图像模型，后续日志/调度都按实际服务的模型记。
 	authKeyIDForProvider, _ := ctx.Value(consts.ContextKeyAuthKeyID).(uint)
-	providersWithMeta, err := service.ProvidersWithMetaBymodelsName(ctx, style, *before, authKeyIDForProvider)
+	providersWithMeta, effBefore, err := service.ProvidersWithMetaBymodelsName(ctx, style, *before, authKeyIDForProvider)
 	if err != nil {
 		var tooLong *service.PromptTooLongError
 		if errors.As(err, &tooLong) {
 			respondPromptTooLong(c, style, err.Error())
 			return
 		}
+		var imagesTooLarge *service.PromptImagesTooLargeError
+		if errors.As(err, &imagesTooLarge) {
+			respondPromptTooLong(c, style, err.Error())
+			return
+		}
 		common.InternalServerError(c, err.Error())
 		return
 	}
+	*before = effBefore
 
 	startReq := time.Now()
 	// 调用负载均衡后的 provider 并转发

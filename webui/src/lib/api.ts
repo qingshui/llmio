@@ -40,6 +40,7 @@ export interface ModelWithProvider {
   Weight: number;
   Priority: number;
   MaxInputTokens: number;
+  MaxImagePixels: number;
   InputPrice: number;
   CacheReadPrice: number;
   OutputPrice: number;
@@ -64,6 +65,7 @@ export interface AuthKey {
   Status: boolean;
   IOLog: boolean;
   Debug: boolean;
+  ImageAutoRoute: boolean;
   ProviderPriorities: number[] | null;
   AllowAll: boolean;
   Models: string[] | null;
@@ -260,6 +262,7 @@ export type AuthKeyPayload = {
   status: boolean;
   io_log: boolean;
   debug: boolean;
+  image_auto_route: boolean;
   provider_priorities: number[];
   allow_all: boolean;
   models: string[];
@@ -347,6 +350,7 @@ export async function createModelProvider(association: {
   weight: number;
   priority: number;
   max_input_tokens: number;
+  max_image_pixels: number;
   input_price: number;
   cache_read_price: number;
   output_price: number;
@@ -371,6 +375,7 @@ export async function updateModelProvider(id: number, association: {
   weight?: number;
   priority?: number;
   max_input_tokens?: number;
+  max_image_pixels?: number;
   input_price?: number;
   cache_read_price?: number;
   output_price?: number;

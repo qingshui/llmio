@@ -147,7 +147,9 @@
     "currency": "貨幣",
     "input_price": "輸入價格",
     "cache_read_price": "快取命中價格",
-    "output_price": "輸出價格"
+    "output_price": "輸出價格",
+    "max_image_pixels": "圖片像素上限",
+    "max_image_pixels_hint": "0 表示不限制。請求內圖片總像素超過該值時，請求不會路由到此關聯。"
   },
   "test_dialog": {
     "title": "模型測試",

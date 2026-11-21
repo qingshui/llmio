@@ -81,6 +81,7 @@ const formSchema = z.object({
   key: z.string().optional(),
   status: z.boolean(),
   io_log: z.boolean(),
+  image_auto_route: z.boolean(),
   debug: z.boolean(),
   provider_priorities: z.array(z.number()),
   allow_all: z.boolean(),
@@ -96,6 +97,7 @@ const defaultFormValues: AuthKeyFormValues = {
   name: "",
   status: true,
   io_log: false,
+  image_auto_route: false,
   debug: false,
   provider_priorities: [],
   allow_all: true,
@@ -280,6 +282,7 @@ export default function AuthKeysPage() {
       key: "",
       status: key.Status,
       io_log: key.IOLog,
+      image_auto_route: key.ImageAutoRoute ?? false,
       debug: key.Debug,
       provider_priorities: key.ProviderPriorities ?? [],
       allow_all: key.AllowAll,
@@ -307,6 +310,7 @@ export default function AuthKeysPage() {
         key: values.key?.trim() || undefined,
         status: values.status,
         io_log: values.io_log,
+        image_auto_route: values.image_auto_route,
         debug: values.debug,
         provider_priorities: values.provider_priorities ?? [],
         allow_all: values.allow_all,
@@ -832,6 +836,22 @@ export default function AuthKeysPage() {
                     <div className="space-y-0.5">
                       <FormLabel>{t('form.debug_label')}</FormLabel>
                       <p className="text-muted-foreground text-xs">{t('form.debug_hint')}</p>
+                    </div>
+                    <FormControl>
+                      <Switch checked={field.value} onCheckedChange={field.onChange} />
+                    </FormControl>
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="image_auto_route"
+                render={({ field }) => (
+                  <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
+                    <div className="space-y-0.5">
+                      <FormLabel>{t('form.image_auto_route_label')}</FormLabel>
+                      <p className="text-muted-foreground text-xs">{t('form.image_auto_route_hint')}</p>
                     </div>
                     <FormControl>
                       <Switch checked={field.value} onCheckedChange={field.onChange} />

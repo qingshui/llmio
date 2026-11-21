@@ -2,6 +2,7 @@ package service
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -9,6 +10,7 @@ import (
 	"log/slog"
 	"net/http"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -397,7 +399,94 @@ type ProvidersWithMeta struct {
 	StickyTTL            int
 }
 
-// PromptTooLongError 表示估算的输入长度超过该模型所有启用关联的上限。
+// styleEnabledAssociations 返回已启用且 provider 类型与请求协议一致的关联基础查询。
+func styleEnabledAssociations(style string) gorm.ChainInterface[models.ModelWithProvider] {
+	providerIDs := models.DB.Model(&models.Provider{}).Select("id").Where("type = ?", style)
+	return gorm.G[models.ModelWithProvider](models.DB).
+		Where("status = ?", true).
+		Where("provider_id IN (?)", providerIDs)
+}
+
+// enabledAssociations 返回模型下启用且 provider 类型与请求协议一致的关联查询。
+// 协议过滤放在能力过滤之前，避免筛出的关联全属于其他协议而导致无可用 provider。
+func enabledAssociations(modelID uint, style string) gorm.ChainInterface[models.ModelWithProvider] {
+	return styleEnabledAssociations(style).Where("model_id = ?", modelID)
+}
+
+// allowedModelAssociations 返回 AuthKey 允许的模型下、已启用且协议一致的关联查询。
+// 上下文里没有 AuthKey 信息（非全量且无允许列表）时 ok=false。
+func allowedModelAssociations(ctx context.Context, style string) (gorm.ChainInterface[models.ModelWithProvider], bool) {
+	allowAll, _ := ctx.Value(consts.ContextKeyAllowAllModel).(bool)
+	if allowAll {
+		return styleEnabledAssociations(style), true
+	}
+	allowed, _ := ctx.Value(consts.ContextKeyAllowModels).([]string)
+	if len(allowed) == 0 {
+		return nil, false
+	}
+	modelIDs := models.DB.Model(&models.Model{}).Select("id").Where("name IN ?", allowed)
+	return styleEnabledAssociations(style).Where("model_id IN (?)", modelIDs), true
+}
+
+// findFallbackModel 从 AuthKey 允许的模型中寻找候选回退模型。
+// requireImage 为 true 时候选关联必须支持图像；候选关联必须已启用、协议一致、输入长度不超限。
+// 请求带工具调用时优先选同时支持工具调用的候选，再按 DisplayOrder 降序、ID 升序取第一个。
+func findFallbackModel(ctx context.Context, style string, before Before, excludeModelID uint, requireImage bool) (*models.Model, error) {
+	base, ok := allowedModelAssociations(ctx, style)
+	if !ok {
+		return nil, nil
+	}
+	chain := base.Where("model_id <> ?", excludeModelID)
+	if requireImage {
+		chain = chain.Where("image = ?", true)
+	}
+	if before.inputTokens > 0 {
+		chain = chain.Where("(max_input_tokens = 0 OR max_input_tokens >= ?)", before.inputTokens)
+	}
+	if before.imagePixels > 0 {
+		chain = chain.Where("(max_image_pixels = 0 OR max_image_pixels >= ?)", before.imagePixels)
+	}
+	assocs, err := chain.Find(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if len(assocs) == 0 {
+		return nil, nil
+	}
+
+	// 请求带工具调用时，优先选同时支持工具调用的候选
+	toolCapable := make(map[uint]bool)
+	for _, mp := range assocs {
+		if lo.FromPtrOr(mp.ToolCall, false) {
+			toolCapable[mp.ModelID] = true
+		}
+	}
+	candidates, err := gorm.G[models.Model](models.DB).
+		Where("id IN ?", lo.Uniq(lo.Map(assocs, func(mp models.ModelWithProvider, _ int) uint { return mp.ModelID }))).
+		Find(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if len(candidates) == 0 {
+		return nil, nil
+	}
+	slices.SortFunc(candidates, func(a, b models.Model) int {
+		if before.toolCall && toolCapable[a.ID] != toolCapable[b.ID] {
+			if toolCapable[a.ID] {
+				return -1
+			}
+			return 1
+		}
+		if c := cmp.Compare(b.DisplayOrder, a.DisplayOrder); c != 0 {
+			return c
+		}
+		return cmp.Compare(a.ID, b.ID)
+	})
+	return &candidates[0], nil
+}
+
+// PromptTooLongError 表示估算的输入长度超过 AuthKey 允许范围内所有启用关联的上限（含回退候选模型），
+// Max 取其中最大的 max_input_tokens，作为该用户实际可用的长度上限报给客户端。
 type PromptTooLongError struct {
 	Estimated int
 	Max       int
@@ -407,14 +496,15 @@ func (e *PromptTooLongError) Error() string {
 	return fmt.Sprintf("prompt is too long: about %d tokens > %d maximum", e.Estimated, e.Max)
 }
 
-// enabledAssociations 返回模型下启用且 provider 类型与请求协议一致的关联查询。
-// 协议过滤放在能力过滤之前，避免筛出的关联全属于其他协议而导致无可用 provider。
-func enabledAssociations(modelID uint, style string) gorm.ChainInterface[models.ModelWithProvider] {
-	providerIDs := models.DB.Model(&models.Provider{}).Select("id").Where("type = ?", style)
-	return gorm.G[models.ModelWithProvider](models.DB).
-		Where("model_id = ?", modelID).
-		Where("status = ?", true).
-		Where("provider_id IN (?)", providerIDs)
+// PromptImagesTooLargeError 表示请求图片总像素超过 AuthKey 允许范围内所有启用关联的上限（含回退候选模型），
+// Max 取其中最大的 max_image_pixels，作为该用户实际可用的视觉预算报给客户端。
+type PromptImagesTooLargeError struct {
+	Pixels int
+	Max    int
+}
+
+func (e *PromptImagesTooLargeError) Error() string {
+	return fmt.Sprintf("request images too large: about %d pixels > %d maximum", e.Pixels, e.Max)
 }
 
 // findModelWithProviders 按能力和输入长度筛选关联。
@@ -434,6 +524,9 @@ func findModelWithProviders(ctx context.Context, modelID uint, style string, bef
 		chain := enabledAssociations(modelID, style)
 		if before.inputTokens > 0 {
 			chain = chain.Where("(max_input_tokens = 0 OR max_input_tokens >= ?)", before.inputTokens)
+		}
+		if before.imagePixels > 0 {
+			chain = chain.Where("(max_image_pixels = 0 OR max_image_pixels >= ?)", before.imagePixels)
 		}
 		if t.toolCall {
 			chain = chain.Where("tool_call = ?", true)
@@ -461,7 +554,23 @@ func findModelWithProviders(ctx context.Context, modelID uint, style string, bef
 	return nil, nil
 }
 
-func ProvidersWithMetaBymodelsName(ctx context.Context, style string, before Before, authKeyID uint) (*ProvidersWithMeta, error) {
+// hasImageCapableAssociation 判断模型名下是否存在已启用、协议一致、支持图像且输入长度不超限的关联。
+func hasImageCapableAssociation(ctx context.Context, modelID uint, style string, before Before) (bool, error) {
+	chain := enabledAssociations(modelID, style).Where("image = ?", true)
+	if before.inputTokens > 0 {
+		chain = chain.Where("(max_input_tokens = 0 OR max_input_tokens >= ?)", before.inputTokens)
+	}
+	if before.imagePixels > 0 {
+		chain = chain.Where("(max_image_pixels = 0 OR max_image_pixels >= ?)", before.imagePixels)
+	}
+	count, err := chain.Count(ctx, "*")
+	if err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
+func ProvidersWithMetaBymodelsName(ctx context.Context, style string, before Before, authKeyID uint) (*ProvidersWithMeta, Before, error) {
 	model, err := gorm.G[models.Model](models.DB).Where("name = ?", before.Model).First(ctx)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -472,41 +581,103 @@ func ProvidersWithMetaBymodelsName(ctx context.Context, style string, before Bef
 				SessionID: before.SessionID,
 				Error:     err.Error(),
 			}); err != nil {
-				return nil, err
+				return nil, before, err
 			}
-			return nil, errors.New("not found model " + before.Model)
+			return nil, before, errors.New("not found model " + before.Model)
 		}
-		return nil, err
+		return nil, before, err
+	}
+
+	// 带图请求且本模型没有能接住的图像关联时，
+	// 从 AuthKey 允许的模型中改选支持图像的模型（找不到候选则维持原有放宽逻辑）。
+	// 图片自动路由按项目（AuthKey.ImageAutoRoute）开关控制，默认关闭。
+	imageAutoRoute, _ := ctx.Value(consts.ContextKeyImageAutoRoute).(bool)
+	if before.image && imageAutoRoute {
+		imageCapable, err := hasImageCapableAssociation(ctx, model.ID, style, before)
+		if err != nil {
+			return nil, before, err
+		}
+		if !imageCapable {
+			fallback, err := findFallbackModel(ctx, style, before, model.ID, true)
+			if err != nil {
+				return nil, before, err
+			}
+			if fallback != nil {
+				slog.Info("image request rerouted to image-capable model",
+					"requested_model", before.Model, "fallback_model", fallback.Name)
+				before.Model = fallback.Name
+				model = *fallback
+			}
+		}
 	}
 
 	modelWithProviders, err := findModelWithProviders(ctx, model.ID, style, before)
 	if err != nil {
-		return nil, err
+		return nil, before, err
 	}
 
 	if len(modelWithProviders) == 0 {
 		enabled, err := enabledAssociations(model.ID, style).Find(ctx)
 		if err != nil {
-			return nil, err
+			return nil, before, err
 		}
 		if len(enabled) == 0 {
-			return nil, errors.New("not provider for model " + before.Model)
+			return nil, before, errors.New("not provider for model " + before.Model)
 		}
-		var maxLimit int
-		for _, mp := range enabled {
-			maxLimit = max(maxLimit, mp.MaxInputTokens)
+		// 超长回退：X 的启用关联都放不下这个输入时，从允许列表里找放得下的模型。
+		// 带图请求不走超长回退（图片自动路由由上面的开关单独控制），
+		// 避免把带图请求送给无图像能力的模型。
+		if !before.image {
+			fallback, err := findFallbackModel(ctx, style, before, model.ID, false)
+			if err != nil {
+				return nil, before, err
+			}
+			if fallback != nil {
+				slog.Info("long request rerouted to model with larger context",
+					"requested_model", before.Model, "fallback_model", fallback.Name, "input_tokens", before.inputTokens)
+				before.Model = fallback.Name
+				model = *fallback
+				modelWithProviders, err = findModelWithProviders(ctx, model.ID, style, before)
+				if err != nil {
+					return nil, before, err
+				}
+			}
 		}
-		tooLong := &PromptTooLongError{Estimated: before.inputTokens, Max: maxLimit}
-		if _, err := SaveChatLog(ctx, models.ChatLog{
-			Name:      before.Model,
-			Status:    consts.StatusError,
-			Style:     style,
-			SessionID: before.SessionID,
-			Error:     tooLong.Error(),
-		}); err != nil {
-			return nil, err
+		// 允许列表里也没有放得下的模型 → 报超限错误，Max 取允许列表内所有启用关联的最大上限
+		if len(modelWithProviders) == 0 {
+			var maxLimit, maxPixels int
+			for _, mp := range enabled {
+				maxLimit = max(maxLimit, mp.MaxInputTokens)
+				maxPixels = max(maxPixels, mp.MaxImagePixels)
+			}
+			if base, ok := allowedModelAssociations(ctx, style); ok {
+				allowedAssocs, err := base.Find(ctx)
+				if err != nil {
+					return nil, before, err
+				}
+				for _, mp := range allowedAssocs {
+					maxLimit = max(maxLimit, mp.MaxInputTokens)
+					maxPixels = max(maxPixels, mp.MaxImagePixels)
+				}
+			}
+			// 图片像素超限优先报更具体的错误，否则按输入长度超限报
+			var overErr error
+			if before.imagePixels > 0 && maxPixels > 0 && before.imagePixels > maxPixels {
+				overErr = &PromptImagesTooLargeError{Pixels: before.imagePixels, Max: maxPixels}
+			} else {
+				overErr = &PromptTooLongError{Estimated: before.inputTokens, Max: maxLimit}
+			}
+			if _, err := SaveChatLog(ctx, models.ChatLog{
+				Name:      before.Model,
+				Status:    consts.StatusError,
+				Style:     style,
+				SessionID: before.SessionID,
+				Error:     overErr.Error(),
+			}); err != nil {
+				return nil, before, err
+			}
+			return nil, before, overErr
 		}
-		return nil, tooLong
 	}
 
 	modelWithProviderMap := lo.KeyBy(modelWithProviders, func(mp models.ModelWithProvider) uint { return mp.ID })
@@ -516,7 +687,7 @@ func ProvidersWithMetaBymodelsName(ctx context.Context, style string, before Bef
 		Where("type = ?", style).
 		Find(ctx)
 	if err != nil {
-		return nil, err
+		return nil, before, err
 	}
 
 	providerMap := lo.KeyBy(providers, func(p models.Provider) uint { return p.ID })
@@ -543,5 +714,5 @@ func ProvidersWithMetaBymodelsName(ctx context.Context, style string, before Bef
 		Breaker:              lo.FromPtrOr(model.Breaker, false),
 		Sticky:               lo.FromPtrOr(model.Sticky, false),
 		StickyTTL:            model.StickyTTL,
-	}, nil
+	}, before, nil
 }

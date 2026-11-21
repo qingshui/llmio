@@ -1,7 +1,13 @@
 package service
 
 import (
+	"bytes"
+	"encoding/base64"
 	"errors"
+	"image"
+	_ "image/gif"
+	_ "image/jpeg"
+	_ "image/png"
 	"regexp"
 	"strings"
 
@@ -24,6 +30,7 @@ type Before struct {
 	structuredOutput bool
 	image            bool
 	inputTokens      int
+	imagePixels      int
 	SessionID        string
 	raw              []byte
 }
@@ -31,13 +38,84 @@ type Before struct {
 // bytesPerToken 是按请求体字节数粗估输入 token 的系数，中英文混合的 JSON 取 3。
 const bytesPerToken = 3
 
-// estimateInputTokens 按请求体字节数粗估输入 token 数，base64 图片数据不计入。
+// defaultImagePixels 是无法解码尺寸的图片按多少像素兜底估算（约等于一张 1280×1600 截图）。
+const defaultImagePixels = 2_048_000
+
+// estimateImageTokens 按请求体字节数粗估输入 token 数，base64 图片数据不计入。
 func estimateInputTokens(data []byte) int {
 	n := len(data) - base64Bytes(gjson.ParseBytes(data))
 	if n < 0 {
 		return 0
 	}
 	return n / bytesPerToken
+}
+
+// estimateImagePixels 统计请求体内嵌 base64 图片的总像素数（含 tool_result 嵌套图片）。
+// 解不出尺寸的图片按 defaultImagePixels 兜底。
+func estimateImagePixels(data []byte) int {
+	return sumImagePixels(gjson.ParseBytes(data))
+}
+
+// sumImagePixels 递归遍历 JSON，累加所有内嵌 base64 图片的像素数。
+// 覆盖 Anthropic source、OpenAI data URI、Gemini inlineData 三种形态。
+func sumImagePixels(v gjson.Result) int {
+	var total int
+	switch {
+	case v.IsObject():
+		if v.Get("type").String() == "base64" {
+			total += imagePixelsFromB64(v.Get("data").String())
+		}
+		v.ForEach(func(k, val gjson.Result) bool {
+			switch k.String() {
+			case "inlineData", "inline_data":
+				total += imagePixelsFromB64(val.Get("data").String())
+			case "url":
+				if s := val.String(); strings.HasPrefix(s, "data:") {
+					total += imagePixelsFromDataURL(s)
+				}
+			default:
+				total += sumImagePixels(val)
+			}
+			return true
+		})
+	case v.IsArray():
+		v.ForEach(func(_, val gjson.Result) bool {
+			total += sumImagePixels(val)
+			return true
+		})
+	}
+	return total
+}
+
+// imagePixelsFromB64 解码 base64 图片并返回其像素数；解码或识别失败按 defaultImagePixels 兜底。
+func imagePixelsFromB64(b64 string) int {
+	raw, err := base64.StdEncoding.DecodeString(b64)
+	if err != nil {
+		// 容忍 base64 里的换行/空白后重试
+		raw, err = base64.StdEncoding.DecodeString(strings.Map(func(r rune) rune {
+			switch r {
+			case ' ', '\n', '\r', '\t':
+				return -1
+			}
+			return r
+		}, b64))
+		if err != nil {
+			return defaultImagePixels
+		}
+	}
+	cfg, _, err := image.DecodeConfig(bytes.NewReader(raw))
+	if err != nil || cfg.Width <= 0 || cfg.Height <= 0 {
+		return defaultImagePixels
+	}
+	return cfg.Width * cfg.Height
+}
+
+// imagePixelsFromDataURL 解析 data:image/...;base64,xxx 形式的内嵌图片像素数。
+func imagePixelsFromDataURL(s string) int {
+	if i := strings.Index(s, ","); i >= 0 {
+		return imagePixelsFromB64(s[i+1:])
+	}
+	return defaultImagePixels
 }
 
 // base64Bytes 统计请求体中内嵌 base64 数据（Anthropic source、OpenAI data URI、Gemini inlineData）的字节数。
@@ -193,6 +271,7 @@ func NewBeforerGemini(model string, stream bool) Beforer {
 			structuredOutput: structuredOutput,
 			image:            image,
 			inputTokens:      estimateInputTokens(data),
+			imagePixels:      estimateImagePixels(data),
 			SessionID:        gjson.GetBytes(data, "session_id").String(),
 			raw:              data,
 		}, nil
@@ -247,6 +326,7 @@ func BeforerOpenAI(data []byte) (*Before, error) {
 		structuredOutput: structuredOutput,
 		image:            image,
 		inputTokens:      estimateInputTokens(data),
+		imagePixels:      estimateImagePixels(data),
 		SessionID:        gjson.GetBytes(data, "session_id").String(),
 		raw:              data,
 	}, nil
@@ -290,6 +370,7 @@ func BeforerOpenAIRes(data []byte) (*Before, error) {
 		structuredOutput: structuredOutput,
 		image:            image,
 		inputTokens:      estimateInputTokens(data),
+		imagePixels:      estimateImagePixels(data),
 		SessionID:        gjson.GetBytes(data, "session_id").String(),
 		raw:              data,
 	}, nil
@@ -329,6 +410,7 @@ func BeforerAnthropic(data []byte) (*Before, error) {
 		structuredOutput: toolCall,
 		image:            image,
 		inputTokens:      estimateInputTokens(data),
+		imagePixels:      estimateImagePixels(data),
 		SessionID:        gjson.GetBytes(data, "session_id").String(),
 		raw:              data,
 	}, nil

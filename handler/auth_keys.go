@@ -21,6 +21,7 @@ type AuthKeyRequest struct {
 	Status             *bool    `json:"status"`
 	IOLog              *bool    `json:"io_log"`
 	Debug              *bool    `json:"debug"`
+	ImageAutoRoute     *bool    `json:"image_auto_route"`
 	AllowAll           *bool    `json:"allow_all"`
 	ProviderPriorities []uint   `json:"provider_priorities"`
 	Models             []string `json:"models"`
@@ -130,6 +131,7 @@ func CreateAuthKey(c *gin.Context) {
 		Status:             req.Status,
 		IOLog:              new(ioLog),
 		Debug:              new(debug),
+		ImageAutoRoute:     req.ImageAutoRoute,
 		ProviderPriorities: sanitizeProviderPriorities(req.ProviderPriorities),
 		AllowAll:           req.AllowAll,
 		Models:             sanitizeModels(req.Models),
@@ -198,6 +200,7 @@ func UpdateAuthKey(c *gin.Context) {
 		Status:             req.Status,
 		IOLog:              new(ioLog),
 		Debug:              new(debug),
+		ImageAutoRoute:     req.ImageAutoRoute,
 		ProviderPriorities: sanitizeProviderPriorities(req.ProviderPriorities),
 		AllowAll:           req.AllowAll,
 		Models:             sanitizeModels(req.Models),
@@ -229,7 +232,7 @@ func UpdateAuthKey(c *gin.Context) {
 		}
 	}
 
-	if _, err := gorm.G[models.AuthKey](models.DB).Where("id = ?", id).Select("name", "status", "io_log", "debug", "provider_priorities", "allow_all", "models", "expires_at").Updates(ctx, update); err != nil {
+	if _, err := gorm.G[models.AuthKey](models.DB).Where("id = ?", id).Select("name", "status", "io_log", "debug", "image_auto_route", "provider_priorities", "allow_all", "models", "expires_at").Updates(ctx, update); err != nil {
 		common.InternalServerError(c, "Failed to update auth key: "+err.Error())
 		return
 	}

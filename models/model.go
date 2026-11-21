@@ -52,6 +52,7 @@ type ModelWithProvider struct {
 	Weight           int
 	Priority         int // 优先级，数字越大越优先；仅 priority 策略下分层降级
 	MaxInputTokens   int `gorm:"default:0"` // 最大输入 token 数，0 表示不限制
+	MaxImagePixels   int `gorm:"default:0"` // 请求图片总像素上限，0 表示不限制
 	InputPrice       *float64
 	CacheReadPrice   *float64
 	OutputPrice      *float64
@@ -131,6 +132,9 @@ type AuthKey struct {
 	Status *bool // 是否启用
 	IOLog  *bool // 是否记录IO
 	Debug  *bool // 是否记录DEBUG日志(完整请求/响应)
+	// ImageAutoRoute 带图请求自动路由开关：开启后该项目的带图请求在原模型接不住时，
+	// 自动改选允许列表内支持图像的模型；关闭则不做图片模型自动选择
+	ImageAutoRoute *bool
 	// Deprecated: 已被 ProviderPriorities 取代。仅保留列映射供启动迁移读取一次，json:"-" 使其不再出现在 API 响应中
 	PreferredProviderID *uint `json:"-"`
 	// 有序 provider 优先级列表：列表内按序优先、失败按序降级；未列入的排在列表之后，按各自全局 Priority 兜底
