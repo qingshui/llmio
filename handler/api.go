@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"slices"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -578,18 +579,31 @@ func GetModelProviderStatus(c *gin.Context) {
 		return
 	}
 
-	// 获取最近10次请求状态
-	logs, err := gorm.G[models.ChatLog](models.DB).
-		Where("provider_name = ?", provider.Name).
-		Where("provider_model = ?", providerModel).
-		Where("name = ?", modelName).
-		Where("status != ?", consts.StatusRunning).
-		Limit(10).
-		Order("created_at DESC").
-		Find(c.Request.Context())
+	// 获取最近10次请求状态：分表新→旧取够即停（id DESC 与 created_at DESC
+	// 等价——分表 id 全局连续单调）
+	refs, err := models.ChatLogShardsForWindow(c.Request.Context(), time.Time{})
 	if err != nil {
-		common.InternalServerError(c, "Failed to retrieve chat log: "+err.Error())
+		common.InternalServerError(c, "Failed to resolve log shards: "+err.Error())
 		return
+	}
+	logs := make([]models.ChatLog, 0, 10)
+	for _, ref := range refs {
+		if len(logs) >= 10 {
+			break
+		}
+		batch, err := gorm.G[models.ChatLog](models.DB).Table(ref.Table).
+			Where("provider_name = ?", provider.Name).
+			Where("provider_model = ?", providerModel).
+			Where("name = ?", modelName).
+			Where("status != ?", consts.StatusRunning).
+			Order("id DESC").
+			Limit(10 - len(logs)).
+			Find(c.Request.Context())
+		if err != nil {
+			common.InternalServerError(c, "Failed to retrieve chat log: "+err.Error())
+			return
+		}
+		logs = append(logs, batch...)
 	}
 
 	status := make([]bool, 0)
@@ -906,16 +920,8 @@ func logDaysKey(c *gin.Context) string {
 	}
 }
 
-// applyLogFilters 按查询参数构建 chat_logs 筛选条件。
-// COUNT 的 SWR 后台刷新会并发重建查询，不能与主查询共享 statement，故每次新建。
-func applyLogFilters(query *gorm.DB, c *gin.Context) *gorm.DB {
-	if all, n := parseLogDays(c); !all {
-		query = query.Where("created_at >= ?", time.Now().AddDate(0, 0, -n))
-	}
-	return applyLogFieldFilters(query, c)
-}
-
 // applyLogFieldFilters 只应用字段筛选，不含时间范围。
+// COUNT 的 SWR 后台刷新会并发重建查询，不能与主查询共享 statement，故每次新建。
 func applyLogFieldFilters(query *gorm.DB, c *gin.Context) *gorm.DB {
 	if v := c.Query("provider_name"); v != "" {
 		query = query.Where("provider_name = ?", v)
@@ -950,56 +956,6 @@ func logCountUncoveredFilter(c *gin.Context) bool {
 	return c.Query("provider_name") != "" || c.Query("status") != "" || c.Query("style") != ""
 }
 
-// logWindowMinID 返回时间窗口内最早一行的 id（走 created_at 索引，毫秒级），窗口内无行返回 0。
-func logWindowMinID(db *gorm.DB, days int) (int64, error) {
-	var ids []int64
-	err := db.Unscoped().Model(&models.ChatLog{}).
-		Where("created_at >= ?", time.Now().AddDate(0, 0, -days)).
-		Order("created_at ASC").Limit(1).Pluck("id", &ids).Error
-	if err != nil || len(ids) == 0 {
-		return 0, err
-	}
-	return ids[0], nil
-}
-
-// logCountQuery 构建筛选组合的 COUNT 查询（Unscoped，口径见 GetRequestLogs）。
-// MariaDB 5.5 下 created_at 范围会让优化器选不含 created_at 的单列索引并逐行回表，
-// 分两种情况规避：
-//   - minID > 0（含 provider_name/status/style 的组合）：用 id >= minID 代替 created_at 范围。
-//     日志按时间追加、id 单调，窗口边界按 id 近似；这些索引末列都是 id，可纯索引范围扫描。
-//   - 仅 auth_key_id/name（MySQL）：强制走覆盖它们的 idx_chat_logs_range_stats，只扫索引（约 1s）。
-func logCountQuery(db *gorm.DB, c *gin.Context, minID int64) *gorm.DB {
-	query := db.Model(&models.ChatLog{})
-	daysAll, _ := parseLogDays(c)
-	switch {
-	case minID > 0:
-		query = applyLogFieldFilters(query, c).Where("id >= ?", minID)
-	case !daysAll && !logCountUncoveredFilter(c) && db.Dialector.Name() == "mysql":
-		query = applyLogFilters(query.Table("chat_logs FORCE INDEX (idx_chat_logs_range_stats)"), c)
-	default:
-		query = applyLogFilters(query, c)
-	}
-	return query.Unscoped()
-}
-
-// countLogs 统计筛选组合的行数，按筛选列选择 logCountQuery 的计划。
-func countLogs(db *gorm.DB, c *gin.Context) (int64, error) {
-	var minID int64
-	if daysAll, n := parseLogDays(c); !daysAll && logCountUncoveredFilter(c) {
-		id, err := logWindowMinID(db, n)
-		if err != nil {
-			return 0, err
-		}
-		if id == 0 {
-			return 0, nil
-		}
-		minID = id
-	}
-	var total int64
-	err := logCountQuery(db, c, minID).Count(&total).Error
-	return total, err
-}
-
 // GetRequestLogs 获取最近的请求日志（支持分页和筛选）
 func GetRequestLogs(c *gin.Context) {
 	// 解析分页参数
@@ -1022,13 +978,20 @@ func GetRequestLogs(c *gin.Context) {
 	// with_count=false 时跳过 COUNT（total 返回 -1），供前端翻页复用已有总数
 	withCount := c.Query("with_count") != "false"
 
+	// 分表窗口（新→旧）与时间谓词只算一次，COUNT 与 Find 共用
+	cutoff, daysAll := logShardCutoff(c)
+	refs, err := models.ChatLogShardsForWindow(c.Request.Context(), cutoff)
+	if err != nil {
+		common.InternalServerError(c, "Failed to resolve log shards: "+err.Error())
+		return
+	}
+
 	var total int64 = -1
 	if withCount {
 		// 统计总数走 Unscoped：去掉 deleted_at IS NULL 后才能纯用
-		// idx_chat_logs_auth_key_id_tokens 覆盖索引计数，否则大 key 会回表扫描上百万行。
+		// 覆盖索引计数，否则大 key 会回表扫描上百万行。
 		// chat_logs 的删除均为硬删（log_cleanup / 手动清理），不存在软删除记录，口径不受影响。
 		unfiltered := providerName == "" && name == "" && status == "" && style == "" && authKeyID == ""
-		daysAll, _ := parseLogDays(c)
 		pointQuery := traceID != "" || sessionID != "" || logID != ""
 
 		var countErr error
@@ -1036,14 +999,17 @@ func GetRequestLogs(c *gin.Context) {
 		case unfiltered && daysAll && !pointQuery:
 			// 全表总数：水位线增量（精确，毫秒级），见 service/chat_log_count.go
 			total, countErr = service.ChatLogsTotal(c.Request.Context())
-		case pointQuery:
-			// 点查命中行数少，直接 COUNT
-			countErr = applyLogFilters(models.DB.Model(&models.ChatLog{}), c).Unscoped().Count(&total).Error
 		default:
-			// 低基数筛选组合（含时间范围 30d/90d）：SWR 缓存，过期返回旧值 + 后台刷新
-			total, countErr = logCountSWR(logCountCacheKey(providerName, name, status, style, authKeyID, logDaysKey(c)), func() (int64, error) {
-				return countLogs(models.DB, c)
-			})
+			count := func() (int64, error) {
+				return fanoutCountLogs(c.Request.Context(), models.DB, c, refs, cutoff, daysAll)
+			}
+			if pointQuery {
+				// 点查命中行数少，直接跨表计数
+				total, countErr = count()
+			} else {
+				// 低基数筛选组合（含时间范围 30d/90d）：SWR 缓存，过期返回旧值 + 后台刷新
+				total, countErr = logCountSWR(logCountCacheKey(providerName, name, status, style, authKeyID, logDaysKey(c)), count)
+			}
 		}
 		if countErr != nil {
 			common.InternalServerError(c, "Failed to count logs: "+countErr.Error())
@@ -1051,9 +1017,8 @@ func GetRequestLogs(c *gin.Context) {
 		}
 	}
 
-	var logs []models.ChatLog
-	query := applyLogFilters(models.DB.Model(&models.ChatLog{}), c)
-	if err := common.ApplyPagination(query.Order("id DESC"), params).Find(&logs).Error; err != nil {
+	logs, err := mergePaginateChatLogs(c.Request.Context(), refs, c, cutoff, daysAll, params)
+	if err != nil {
 		common.InternalServerError(c, "Failed to query logs: "+err.Error())
 		return
 	}
@@ -1092,8 +1057,8 @@ func GetChatIO(c *gin.Context) {
 
 	// chat_io 内容已迁移到文件存储（logs/chat_io/<date>.log），
 	// 数据库里的 chat_ios 表只保留与 chat_logs 的关联。
-	// 这里通过 ChatLog 的 created_at 定位到对应日期的文件，再按 log_id 读取。
-	chatLog, err := gorm.G[models.ChatLog](models.DB).Where("id = ?", id).First(c.Request.Context())
+	// 这里按 id 路由到所属分表取 created_at，再定位对应日期的文件，按 log_id 读取。
+	chatLog, err := findChatLogByID(c.Request.Context(), id)
 	if err != nil {
 		common.NotFound(c, "ChatLog not found")
 		return
@@ -1126,20 +1091,35 @@ func GetChatIO(c *gin.Context) {
 	})
 }
 
-// GetUserAgents 获取所有不重复的用户代理种类
+// GetUserAgents 获取所有不重复的用户代理种类（跨分表 DISTINCT 后合并）
 func GetUserAgents(c *gin.Context) {
-	var userAgents []string
-
-	// 查询所有不重复的非空用户代理
-	if err := models.DB.Model(&models.ChatLog{}).
-		Where("user_agent IS NOT NULL AND user_agent != ''").
-		Distinct("user_agent").
-		Pluck("user_agent", &userAgents).
-		Error; err != nil {
-		common.InternalServerError(c, "Failed to query user agents: "+err.Error())
+	refs, err := models.ChatLogShardsForWindow(c.Request.Context(), time.Time{})
+	if err != nil {
+		common.InternalServerError(c, "Failed to resolve log shards: "+err.Error())
 		return
 	}
 
+	set := make(map[string]struct{})
+	for _, ref := range refs {
+		var userAgents []string
+		if err := models.DB.WithContext(c.Request.Context()).Model(&models.ChatLog{}).Table(ref.Table).
+			Where("user_agent IS NOT NULL AND user_agent != ''").
+			Distinct("user_agent").
+			Pluck("user_agent", &userAgents).
+			Error; err != nil {
+			common.InternalServerError(c, "Failed to query user agents: "+err.Error())
+			return
+		}
+		for _, ua := range userAgents {
+			set[ua] = struct{}{}
+		}
+	}
+
+	userAgents := make([]string, 0, len(set))
+	for ua := range set {
+		userAgents = append(userAgents, ua)
+	}
+	sort.Strings(userAgents)
 	common.Success(c, userAgents)
 }
 
@@ -1233,35 +1213,53 @@ func CleanLogs(c *gin.Context) {
 
 	switch req.Type {
 	case "count":
-		// 获取要保留的最小 ID
-		var minID uint
-		if err := models.DB.Model(&models.ChatLog{}).
-			Order("id DESC").
-			Limit(req.Value).
-			Pluck("id", &[]uint{}).
-			Scan(&minID).Error; err != nil {
+		// 跨分表取「第 N 新」的 id 作为保留水位（分表 id 全局连续，新→旧取够即停）
+		minID, found, err := nthNewestChatLogID(c.Request.Context(), req.Value)
+		if err != nil {
 			common.InternalServerError(c, "Failed to query min ID: "+err.Error())
 			return
 		}
 
-		if minID == 0 {
+		if !found {
+			// 总行数不足保留条数，全保留
 			common.Success(c, map[string]any{"deleted_count": 0})
 			return
 		}
 
-		// 先删除关联的 ChatIO
-		if err := models.DB.Unscoped().Where("log_id IN (SELECT id FROM chat_logs WHERE id < ?)", minID).Delete(&models.ChatIO{}).Error; err != nil {
+		// 先删除关联的 ChatIO（id 全局唯一，直接按水位删，无需逐表子查询）
+		if err := models.DB.WithContext(c.Request.Context()).Unscoped().Where("log_id < ?", minID).Delete(&models.ChatIO{}).Error; err != nil {
 			common.InternalServerError(c, "Failed to delete chat IO: "+err.Error())
 			return
 		}
 
-		// 删除日志
-		result := models.DB.Unscoped().Where("id < ?", minID).Delete(&models.ChatLog{})
-		if result.Error != nil {
-			common.InternalServerError(c, "Failed to delete logs: "+result.Error.Error())
+		// 逐分表删除水位以下的日志
+		refs, err := models.ChatLogShardsForWindow(c.Request.Context(), time.Time{})
+		if err != nil {
+			common.InternalServerError(c, "Failed to resolve log shards: "+err.Error())
 			return
 		}
-		deletedCount = result.RowsAffected
+		for _, ref := range refs {
+			result := models.DB.WithContext(c.Request.Context()).Unscoped().Table(ref.Table).
+				Where("id < ?", minID).Delete(&models.ChatLog{})
+			if result.Error != nil {
+				common.InternalServerError(c, "Failed to delete logs: "+result.Error.Error())
+				return
+			}
+			deletedCount += result.RowsAffected
+		}
+
+		// 受影响的封存分表重算统计（删空的月份由封存自愈清掉注册行与空表）
+		for _, shard := range models.SealedChatLogShards() {
+			if shard.MinID < minID && minID <= shard.MaxID {
+				if err := models.SealChatLogShard(c.Request.Context(), shard.MonthKey); err != nil {
+					slog.Error("re-seal chat log shard failed", "month", shard.MonthKey, "error", err)
+				}
+			} else if minID > shard.MaxID {
+				if err := models.DropChatLogShard(c.Request.Context(), shard.MonthKey); err != nil {
+					slog.Error("drop chat log shard failed", "month", shard.MonthKey, "error", err)
+				}
+			}
+		}
 
 	case "days":
 		count, err := service.CleanLogsByDays(c.Request.Context(), req.Value)

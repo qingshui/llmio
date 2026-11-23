@@ -15,6 +15,11 @@ import (
 // (logs/chat_io/<date>.log)，然后删除这三个孤儿列，使表结构与当前
 // ChatIO 模型一致（模型现在只剩 LogId）。
 //
+// 注意：本迁移当前没有接线（无调用点），且其中的 LEFT JOIN chat_logs 针对
+// 已废弃的 base 表——chat_logs 已按月分表（models/chat_log_shard.go），
+// 活跃数据在 chat_logs_YYYYMM。仅当历史存量库尚未做过该迁移时才有意义，
+// 分表化环境不要再接线执行。
+//
 // 背景：ChatIO 已从 DB 列存储改为按天 append-only 文件存储，但
 // models.ChatIO 的 Input/OutputUnion 字段移除后，AutoMigrate 只加列不删列，
 // 旧库仍残留这三个无人读写的列及其历史数据。

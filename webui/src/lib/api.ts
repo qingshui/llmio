@@ -442,7 +442,9 @@ export async function getModelCounts(range: StatRange): Promise<ModelCount[]> {
 }
 
 export async function getProjectCounts(range: StatRange): Promise<ProjectMetrics> {
-  return apiRequest<ProjectMetrics>(`/metrics/projects?range=${range}`);
+  // 后端无数据时 nil 切片序列化为 null，图表组件直接 .map 会崩溃
+  const data = await apiRequest<ProjectMetrics>(`/metrics/projects?range=${range}`);
+  return { calls: data?.calls ?? [], tokens: data?.tokens ?? [] };
 }
 
 // Test API functions

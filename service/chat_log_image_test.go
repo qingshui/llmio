@@ -126,7 +126,7 @@ func TestPixelOverflowErrorLogRecordsImage(t *testing.T) {
 	}
 
 	var saved models.ChatLog
-	if err := models.DB.First(&saved).Error; err != nil {
+	if err := models.DB.Table(models.CurrentChatLogShardTable()).First(&saved).Error; err != nil {
 		t.Fatal(err)
 	}
 	if !saved.Image {
@@ -148,7 +148,7 @@ func TestModelNotFoundErrorLogRecordsImage(t *testing.T) {
 	}
 
 	var saved models.ChatLog
-	if err := models.DB.First(&saved).Error; err != nil {
+	if err := models.DB.Table(models.CurrentChatLogShardTable()).First(&saved).Error; err != nil {
 		t.Fatal(err)
 	}
 	if !saved.Image {

@@ -47,17 +47,33 @@ type MetricsRes struct {
 }
 
 func computeMetrics(ctx context.Context, start time.Time) (MetricsRes, error) {
-	chain := gorm.G[models.ChatLog](models.DB).Where("created_at >= ?", start)
-
-	reqs, err := chain.Count(ctx, "id")
+	// 跨分表扇出：整月覆盖的分表不加时间谓词，边界分表加 created_at 范围
+	refs, err := models.ChatLogShardsForWindow(ctx, start)
 	if err != nil {
 		return MetricsRes{}, err
 	}
-	var tokens sql.NullInt64
-	if err := chain.Select("sum(total_tokens) as tokens").Scan(ctx, &tokens); err != nil {
-		return MetricsRes{}, err
+
+	var res MetricsRes
+	for _, ref := range refs {
+		var chain gorm.ChainInterface[models.ChatLog]
+		if ref.Boundary {
+			chain = gorm.G[models.ChatLog](models.DB.WithContext(ctx)).Table(ref.Table).
+				Where("created_at >= ?", start)
+		} else {
+			chain = gorm.G[models.ChatLog](models.DB.WithContext(ctx)).Table(ref.Table)
+		}
+		reqs, err := chain.Count(ctx, "id")
+		if err != nil {
+			return MetricsRes{}, err
+		}
+		var tokens sql.NullInt64
+		if err := chain.Select("sum(total_tokens) as tokens").Scan(ctx, &tokens); err != nil {
+			return MetricsRes{}, err
+		}
+		res.Reqs += reqs
+		res.Tokens += tokens.Int64
 	}
-	return MetricsRes{Reqs: reqs, Tokens: tokens.Int64}, nil
+	return res, nil
 }
 
 func Metrics(c *gin.Context) {
@@ -134,21 +150,38 @@ func Counts(c *gin.Context) {
 	}
 
 	results, err := cachedCompute("counts:"+rng, func() ([]Count, error) {
-		results := make([]Count, 0)
+		// 跨分表 GROUP BY 后合并，全局排序再做 top5+others
 		// Unscoped：去掉 deleted_at IS NULL，让 GROUP BY name 走覆盖索引（口径包含软删除记录）
-		q := models.DB.
-			Unscoped().
-			Model(&models.ChatLog{})
-		if hasFilter {
-			q = q.Where("created_at >= ?", cutoff)
-		}
-		if err := q.
-			Select("name as model, COUNT(*) as calls").
-			Group("name").
-			Order("calls DESC").
-			Scan(&results).Error; err != nil {
+		merged := make(map[string]int64)
+		refs, err := models.ChatLogShardsForWindow(c.Request.Context(), cutoff)
+		if err != nil {
 			return nil, err
 		}
+		for _, ref := range refs {
+			q := models.DB.WithContext(c.Request.Context()).
+				Unscoped().
+				Model(&models.ChatLog{}).
+				Table(ref.Table)
+			if hasFilter && ref.Boundary {
+				q = q.Where("created_at >= ?", cutoff)
+			}
+			var shardResults []Count
+			if err := q.
+				Select("name as model, COUNT(*) as calls").
+				Group("name").
+				Scan(&shardResults).Error; err != nil {
+				return nil, err
+			}
+			for _, item := range shardResults {
+				merged[item.Model] += item.Calls
+			}
+		}
+
+		results := make([]Count, 0, len(merged))
+		for model, calls := range merged {
+			results = append(results, Count{Model: model, Calls: calls})
+		}
+		sort.Slice(results, func(i, j int) bool { return results[i].Calls > results[j].Calls })
 
 		const topN = 5
 		if len(results) > topN {
@@ -199,26 +232,42 @@ func rankProjectTopN(list []ProjectCount, less func(a, b ProjectCount) bool) []P
 	return append(sorted[:topN], others)
 }
 
-func computeProjectCounts(cutoff time.Time, hasFilter bool) (ProjectMetrics, error) {
-	type authKeyCount struct {
-		AuthKeyID uint  `gorm:"column:auth_key_id"`
-		Calls     int64 `gorm:"column:calls"`
-		Tokens    int64 `gorm:"column:tokens"`
-	}
-
-	rows := make([]authKeyCount, 0)
+func computeProjectCounts(ctx context.Context, cutoff time.Time, hasFilter bool) (ProjectMetrics, error) {
+	// 跨分表 GROUP BY auth_key_id 后在调用次数/token 上分别合并
 	// Unscoped：去掉 deleted_at IS NULL，让 GROUP BY auth_key_id 走覆盖索引（口径包含软删除记录）
-	q := models.DB.
-		Unscoped().
-		Model(&models.ChatLog{})
-	if hasFilter {
-		q = q.Where("created_at >= ?", cutoff)
-	}
-	if err := q.
-		Select("auth_key_id, COUNT(*) as calls, SUM(total_tokens) as tokens").
-		Group("auth_key_id").
-		Scan(&rows).Error; err != nil {
+	refs, err := models.ChatLogShardsForWindow(ctx, cutoff)
+	if err != nil {
 		return ProjectMetrics{}, err
+	}
+	agg := make(map[uint]*projectShardAgg)
+	for _, ref := range refs {
+		q := models.DB.WithContext(ctx).
+			Unscoped().
+			Model(&models.ChatLog{}).
+			Table(ref.Table)
+		if hasFilter && ref.Boundary {
+			q = q.Where("created_at >= ?", cutoff)
+		}
+		var shardRows []projectShardRow
+		if err := q.
+			Select("auth_key_id, COUNT(*) as calls, SUM(total_tokens) as tokens").
+			Group("auth_key_id").
+			Scan(&shardRows).Error; err != nil {
+			return ProjectMetrics{}, err
+		}
+		for _, row := range shardRows {
+			item := agg[row.AuthKeyID]
+			if item == nil {
+				item = &projectShardAgg{}
+				agg[row.AuthKeyID] = item
+			}
+			item.calls += row.Calls
+			item.tokens += row.Tokens
+		}
+	}
+	rows := make([]projectShardRow, 0, len(agg))
+	for id, item := range agg {
+		rows = append(rows, projectShardRow{AuthKeyID: id, Calls: item.calls, Tokens: item.tokens})
 	}
 
 	ids := make([]uint, 0)
@@ -270,6 +319,17 @@ func computeProjectCounts(cutoff time.Time, hasFilter bool) (ProjectMetrics, err
 	}, nil
 }
 
+type projectShardRow struct {
+	AuthKeyID uint  `gorm:"column:auth_key_id"`
+	Calls     int64 `gorm:"column:calls"`
+	Tokens    int64 `gorm:"column:tokens"`
+}
+
+type projectShardAgg struct {
+	calls  int64
+	tokens int64
+}
+
 func ProjectCounts(c *gin.Context) {
 	rng, cutoff, hasFilter, ok := rangeFromRequest(c)
 	if !ok {
@@ -278,7 +338,7 @@ func ProjectCounts(c *gin.Context) {
 	}
 
 	res, err := cachedCompute("projects:"+rng, func() (ProjectMetrics, error) {
-		return computeProjectCounts(cutoff, hasFilter)
+		return computeProjectCounts(c.Request.Context(), cutoff, hasFilter)
 	})
 	if err != nil {
 		common.InternalServerError(c, err.Error())

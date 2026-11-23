@@ -27,14 +27,16 @@ func setupRoutingDB(t *testing.T) {
 		t.Fatal(err)
 	}
 	sqlDB.SetMaxOpenConns(1)
-	if err := db.AutoMigrate(&models.Model{}, &models.ModelWithProvider{}, &models.Provider{}, &models.ChatLog{}); err != nil {
+	if err := db.AutoMigrate(&models.Model{}, &models.ModelWithProvider{}, &models.Provider{}, &models.ChatLog{}, &models.ChatLogShard{}); err != nil {
 		t.Fatal(err)
 	}
 	old := models.DB
 	models.DB = db
+	models.ResetChatLogShardState()
 	t.Cleanup(func() {
 		sqlDB.Close()
 		models.DB = old
+		models.ResetChatLogShardState()
 	})
 }
 

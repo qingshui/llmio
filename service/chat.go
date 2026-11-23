@@ -340,7 +340,7 @@ func RecordLog(ctx context.Context, reqStart time.Time, reader io.ReadCloser, pr
 			return err
 		}
 		log.Status = consts.StatusSuccess
-		if _, err := gorm.G[models.ChatLog](models.DB).Where("id = ?", logId).Updates(ctx, *log); err != nil {
+		if _, err := updateChatLogByID(ctx, logId, *log); err != nil {
 			return err
 		}
 		if ioLog {
@@ -351,7 +351,7 @@ func RecordLog(ctx context.Context, reqStart time.Time, reader io.ReadCloser, pr
 		return nil
 	}
 	if err := recordFunc(); err != nil {
-		if _, err := gorm.G[models.ChatLog](models.DB).Where("id = ?", logId).Updates(ctx, models.ChatLog{
+		if _, err := updateChatLogByID(ctx, logId, models.ChatLog{
 			Status: consts.StatusError,
 			Error:  err.Error(),
 		}); err != nil {
@@ -361,10 +361,36 @@ func RecordLog(ctx context.Context, reqStart time.Time, reader io.ReadCloser, pr
 }
 
 func SaveChatLog(ctx context.Context, log models.ChatLog) (uint, error) {
-	if err := gorm.G[models.ChatLog](models.DB).Create(ctx, &log); err != nil {
+	err := models.WithChatLogShardForInsert(ctx, func(tx *gorm.DB, table string) error {
+		return gorm.G[models.ChatLog](tx).Table(table).Create(ctx, &log)
+	})
+	if err != nil {
 		return 0, err
 	}
 	return log.ID, nil
+}
+
+// updateChatLogByID 按 id 路由到所属分表更新。路由表上 miss（rowsAffected==0）
+// 时逐封存表主键点查探测兜底，覆盖跨月在途响应的 Update 竞态；
+// 所有分表都不含该 id（可能已被清理）时按 0 影响行返回。
+func updateChatLogByID(ctx context.Context, id uint, updates models.ChatLog) (int64, error) {
+	table, err := models.LocateChatLogTable(ctx, id)
+	if err != nil {
+		return 0, err
+	}
+	rows, err := gorm.G[models.ChatLog](models.DB).Table(table).Where("id = ?", id).Updates(ctx, updates)
+	if err != nil {
+		return 0, err
+	}
+	if rows > 0 {
+		return int64(rows), nil
+	}
+	probeTable, perr := models.ProbeChatLogTable(ctx, id)
+	if perr != nil || probeTable == table {
+		return 0, nil
+	}
+	probedRows, err := gorm.G[models.ChatLog](models.DB).Table(probeTable).Where("id = ?", id).Updates(ctx, updates)
+	return int64(probedRows), err
 }
 
 func BuildHeaders(source http.Header, withHeader bool, customHeaders map[string]string, stream bool) http.Header {

@@ -29,16 +29,21 @@ func Init(ctx context.Context, path string) {
 		panic(err)
 	}
 	DB = db
+	// chat_logs 已按月分表（chat_log_shard.go）：base 表不再由 AutoMigrate
+	// 维护，当前月分表与封存注册表由 ReconcileChatLogShards 就绪/收敛
 	if err := db.AutoMigrate(
 		&Provider{},
 		&Model{},
 		&ModelWithProvider{},
-		&ChatLog{},
+		&ChatLogShard{},
 		&ChatIO{},
 		&Config{},
 		&AuthKey{},
 		&LogCleanupRecord{},
 	); err != nil {
+		panic(err)
+	}
+	if err := ReconcileChatLogShards(ctx); err != nil {
 		panic(err)
 	}
 	// 兼容性考虑
@@ -63,9 +68,6 @@ func Init(ctx context.Context, path string) {
 		panic(err)
 	}
 	if err := ensureAuthKeyProviderPriorities(ctx); err != nil {
-		panic(err)
-	}
-	if _, err := gorm.G[ChatLog](DB).Where("auth_key_id IS NULL").Update(ctx, "auth_key_id", 0); err != nil {
 		panic(err)
 	}
 	if err := ensureLogCleanupPolicyConfig(ctx); err != nil {
