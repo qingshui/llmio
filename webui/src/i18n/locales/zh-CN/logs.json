@@ -49,6 +49,7 @@
     "provider_model": "提供商模型",
     "type": "类型",
     "provider": "提供商",
+    "image_tooltip": "带图片输入",
     "actions": "操作"
   },
   "mobile": {
@@ -72,6 +73,8 @@
     "size": "响应大小",
     "remote_ip": "远端 IP",
     "io_log": "记录 IO",
+    "image": "图片输入",
+    "image_pixels": "图片总像素",
     "retry": "重试次数",
     "user_agent": "用户代理",
     "performance": "性能指标",

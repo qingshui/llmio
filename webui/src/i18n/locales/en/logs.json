@@ -49,6 +49,7 @@
     "provider_model": "Provider Model",
     "type": "Type",
     "provider": "Provider",
+    "image_tooltip": "Has image input",
     "actions": "Actions"
   },
   "mobile": {
@@ -72,6 +73,8 @@
     "size": "Response Size",
     "remote_ip": "Remote IP",
     "io_log": "IO Log",
+    "image": "Image Input",
+    "image_pixels": "Total Image Pixels",
     "retry": "Retries",
     "user_agent": "User Agent",
     "performance": "Performance",

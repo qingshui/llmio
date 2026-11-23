@@ -74,8 +74,10 @@ type ChatLog struct {
 	UserAgent     string         `gorm:"index"` // 用户代理
 	RemoteIP      string         // 访问ip
 	AuthKeyID     uint           `gorm:"index:idx_chat_logs_auth_key_id_tokens,priority:1;index:idx_chat_logs_range_stats,priority:3"` // 使用的AuthKey ID
-	SessionID     string         `gorm:"index"`                                                                                        // 请求体中的session_id
+	SessionID     string         `gorm:"index"` // 请求体中的session_id
 	ChatIO        bool           // 是否开启IO记录
+	Image         bool           // 请求是否带有图片输入
+	ImagePixels   int            // 请求内嵌图片总像素
 
 	Error          string        // if status is error, this field will be set
 	Retry          int           // 重试次数

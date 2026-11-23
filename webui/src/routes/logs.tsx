@@ -17,7 +17,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Input } from "@/components/ui/input";
 import Loading from "@/components/loading";
 import { getLogs, getProviders, getModelOptions, getAuthKeysList, type ChatLog, type Provider, type Model, type AuthKeyItem, getProviderTemplates, cleanLogs } from "@/lib/api";
-import { ChevronLeft, ChevronRight, RefreshCw, Trash2, Eye, MessageSquare, Search } from "lucide-react";
+import { ChevronLeft, ChevronRight, RefreshCw, Trash2, Eye, MessageSquare, Search, Image as ImageIcon } from "lucide-react";
 
 // 格式化时间显示
 const formatTime = (nanoseconds: number): string => {
@@ -34,6 +34,12 @@ const formatBytes = (bytes: number): string => {
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(2)} KB`;
   if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
   return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+};
+
+// 格式化像素数显示，大于 1MP 时附加 MP 读数
+const formatPixels = (pixels: number): string => {
+  if (pixels >= 1000000) return `${pixels.toLocaleString()} px (${(pixels / 1000000).toFixed(1)} MP)`;
+  return `${pixels.toLocaleString()} px`;
 };
 
 type DetailCardProps = {
@@ -434,7 +440,16 @@ export default function LogsPage() {
                         <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
                           {new Date(log.CreatedAt).toLocaleString()}
                         </TableCell>
-                        <TableCell className="font-medium">{log.Name}</TableCell>
+                        <TableCell className="font-medium">
+                          <span className="inline-flex items-center gap-1">
+                            <span className="truncate">{log.Name}</span>
+                            {log.Image && (
+                              <span title={t('table.image_tooltip')} className="inline-flex items-center">
+                                <ImageIcon className="size-3.5 text-muted-foreground" />
+                              </span>
+                            )}
+                          </span>
+                        </TableCell>
                         <TableCell className="text-xs">{log.key_name || '-'}</TableCell>
                         <TableCell>
                           <span className={`inline-flex items-center px-2 py-1 ${getStatusTextClass(log.Status)}`}>
@@ -475,7 +490,14 @@ export default function LogsPage() {
                   <div key={log.ID} className="py-3 space-y-2 my-1 px-1">
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0 flex-1">
-                        <h3 className="font-semibold text-sm truncate">{log.Name}</h3>
+                        <h3 className="font-semibold text-sm truncate flex items-center gap-1">
+                          <span className="truncate">{log.Name}</span>
+                          {log.Image && (
+                            <span title={t('table.image_tooltip')} className="inline-flex items-center shrink-0">
+                              <ImageIcon className="size-3.5 text-muted-foreground" />
+                            </span>
+                          )}
+                        </h3>
                         <p className="text-[11px] text-muted-foreground">
                           <span className="font-mono mr-2">#{log.ID}</span>
                           {new Date(log.CreatedAt).toLocaleString()}
@@ -625,6 +647,8 @@ export default function LogsPage() {
                     <DetailCard label={t('detail.size')} value={selectedLog.Size ? formatBytes(selectedLog.Size) : '-'} />
                     <DetailCard label={t('detail.remote_ip')} value={selectedLog.RemoteIP || '-'} mono />
                     <DetailCard label={t('detail.io_log')} value={selectedLog.ChatIO ? t('detail.io_yes') : t('detail.io_no')} />
+                    <DetailCard label={t('detail.image')} value={selectedLog.Image ? t('detail.io_yes') : t('detail.io_no')} />
+                    <DetailCard label={t('detail.image_pixels')} value={selectedLog.ImagePixels > 0 ? formatPixels(selectedLog.ImagePixels) : '-'} />
                     <DetailCard label={t('detail.retry')} value={selectedLog.Retry ?? 0} />
                   </div>
                   <div className="grid grid-cols-1 gap-4">

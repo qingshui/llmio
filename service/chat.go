@@ -129,6 +129,8 @@ func BalanceChat(ctx context.Context, start time.Time, style string, before Befo
 				AuthKeyID:      authKeyID,
 				SessionID:      before.SessionID,
 				ChatIO:         authKeyIOLog,
+				Image:          before.image,
+				ImagePixels:    before.imagePixels,
 				Retry:          retry,
 				ProxyTime:      time.Since(start),
 				InputPrice:     lo.FromPtrOr(modelWithProvider.InputPrice, 0),
@@ -575,11 +577,13 @@ func ProvidersWithMetaBymodelsName(ctx context.Context, style string, before Bef
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			if _, err := SaveChatLog(ctx, models.ChatLog{
-				Name:      before.Model,
-				Status:    consts.StatusError,
-				Style:     style,
-				SessionID: before.SessionID,
-				Error:     err.Error(),
+				Name:        before.Model,
+				Status:      consts.StatusError,
+				Style:       style,
+				SessionID:   before.SessionID,
+				Image:       before.image,
+				ImagePixels: before.imagePixels,
+				Error:       err.Error(),
 			}); err != nil {
 				return nil, before, err
 			}
@@ -668,11 +672,13 @@ func ProvidersWithMetaBymodelsName(ctx context.Context, style string, before Bef
 				overErr = &PromptTooLongError{Estimated: before.inputTokens, Max: maxLimit}
 			}
 			if _, err := SaveChatLog(ctx, models.ChatLog{
-				Name:      before.Model,
-				Status:    consts.StatusError,
-				Style:     style,
-				SessionID: before.SessionID,
-				Error:     overErr.Error(),
+				Name:        before.Model,
+				Status:      consts.StatusError,
+				Style:       style,
+				SessionID:   before.SessionID,
+				Image:       before.image,
+				ImagePixels: before.imagePixels,
+				Error:       overErr.Error(),
 			}); err != nil {
 				return nil, before, err
 			}

@@ -520,6 +520,8 @@ export interface ChatLog {
   ChunkTime: number;
   Tps: number;
   ChatIO: boolean;
+  Image: boolean;
+  ImagePixels: number;
   Size: number;
   prompt_tokens: number;
   completion_tokens: number;
