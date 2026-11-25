@@ -279,20 +279,26 @@ func ensureShardIDContinuationLocked(ctx context.Context, month string) error {
 			}
 		}
 	default:
-		// sqlite：sqlite_sequence 不足时以哑行种子抬升，删除后序列保留最高值
+		// sqlite：sqlite_sequence 可安全直接写入（缺行则补）。
+		// 旧实现用哑行 INSERT id=next-1 抬序列、删除后靠 AUTOINCREMENT 保留：
+		// 表里已有真实数据时（任何一次带流量的重启必现）哑行会撞最大主键
+		// UNIQUE，导致 ReconcileChatLogShards 失败、启动 panic。
 		var seq int64
 		if err := DB.WithContext(ctx).Raw(
 			"SELECT seq FROM sqlite_sequence WHERE name = ?", table).Scan(&seq).Error; err != nil {
 			seq = 0
 		}
-		if seq < next && next > 1 {
-			if err := DB.WithContext(ctx).Exec(
-				"INSERT INTO `"+table+"` (id) VALUES (?)", next-1).Error; err != nil {
-				return fmt.Errorf("seed sqlite sequence for %s: %w", table, err)
+		if target := next - 1; seq < target && target > 0 {
+			res := DB.WithContext(ctx).Exec(
+				"UPDATE sqlite_sequence SET seq = ? WHERE name = ?", target, table)
+			if res.Error != nil {
+				return fmt.Errorf("bump sqlite sequence for %s: %w", table, res.Error)
 			}
-			if err := DB.WithContext(ctx).Exec(
-				"DELETE FROM `"+table+"` WHERE id = ?", next-1).Error; err != nil {
-				return fmt.Errorf("remove sqlite seed row for %s: %w", table, err)
+			if res.RowsAffected == 0 {
+				if err := DB.WithContext(ctx).Exec(
+					"INSERT INTO sqlite_sequence (name, seq) VALUES (?, ?)", table, target).Error; err != nil {
+					return fmt.Errorf("seed sqlite sequence for %s: %w", table, err)
+				}
 			}
 		}
 	}
