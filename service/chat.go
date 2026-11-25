@@ -602,18 +602,22 @@ func ProvidersWithMetaBymodelsName(ctx context.Context, style string, before Bef
 	model, err := gorm.G[models.Model](models.DB).Where("name = ?", before.Model).First(ctx)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
+			// 错误日志必须带上 AuthKeyID 与有意义的错误信息，
+			// 否则管理界面会把普通 key 的失败请求误显示为"无归属"（admin）调用。
+			notFoundErr := errors.New("not found model " + before.Model)
 			if _, err := SaveChatLog(ctx, models.ChatLog{
-				Name:        before.Model,
-				Status:      consts.StatusError,
-				Style:       style,
-				SessionID:   before.SessionID,
-				Image:       before.image,
-				ImagePixels: before.imagePixels,
-				Error:       err.Error(),
+				Name:          before.Model,
+				Status:        consts.StatusError,
+				Style:         style,
+				SessionID:     before.SessionID,
+				Image:         before.image,
+				ImagePixels:   before.imagePixels,
+				AuthKeyID:     authKeyID,
+				Error:         notFoundErr.Error(),
 			}); err != nil {
 				return nil, before, err
 			}
-			return nil, before, errors.New("not found model " + before.Model)
+			return nil, before, notFoundErr
 		}
 		return nil, before, err
 	}
@@ -698,13 +702,14 @@ func ProvidersWithMetaBymodelsName(ctx context.Context, style string, before Bef
 				overErr = &PromptTooLongError{Estimated: before.inputTokens, Max: maxLimit}
 			}
 			if _, err := SaveChatLog(ctx, models.ChatLog{
-				Name:        before.Model,
-				Status:      consts.StatusError,
-				Style:       style,
-				SessionID:   before.SessionID,
-				Image:       before.image,
-				ImagePixels: before.imagePixels,
-				Error:       overErr.Error(),
+				Name:          before.Model,
+				Status:        consts.StatusError,
+				Style:         style,
+				SessionID:     before.SessionID,
+				Image:         before.image,
+				ImagePixels:   before.imagePixels,
+				AuthKeyID:     authKeyID,
+				Error:         overErr.Error(),
 			}); err != nil {
 				return nil, before, err
 			}
